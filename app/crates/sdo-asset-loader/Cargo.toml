@@ -1,0 +1,23 @@
+[package]
+name = "sdo-asset-loader"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+sdo-assets.workspace = true
+sdo-audio.workspace = true
+sdo-dance.workspace = true
+sdo-song = {workspace=true, features=["catalog"]}
+serde.workspace = true
+serde_json.workspace = true
+font8x8 = "0.3.1"
+
+[dev-dependencies]
+tempfile = "3.27"
+image.workspace = true
+sdo-ui.workspace = true
+sdo-gameplay.workspace = true
+

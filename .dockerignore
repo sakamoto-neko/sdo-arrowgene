@@ -1,0 +1,6 @@
+**
+!app/
+!app/Cargo.toml
+!app/Cargo.lock
+!app/crates/
+!app/crates/**

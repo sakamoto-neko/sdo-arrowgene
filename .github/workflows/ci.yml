@@ -1,0 +1,170 @@
+name: Rust
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.event_name == 'push' && 'master-release' || github.run_id }}
+  queue: max
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    env:
+      RELEASE_BUILD: ${{ github.event_name == 'push' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Linux audio dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - name: Check server image
+        if: github.event_name == 'pull_request' && runner.os == 'Linux'
+        working-directory: .
+        run: docker build -t sdo-server .
+      - name: Build release binaries
+        if: env.RELEASE_BUILD == 'true' && runner.os != 'macOS'
+        run: cargo build --release --locked -p sdo-arrowgene -p sdo-multiplayer --bin sdo-arrowgene --bin sdo-server
+      - name: Build universal macOS binaries
+        if: env.RELEASE_BUILD == 'true' && runner.os == 'macOS'
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          cargo build --release --locked -p sdo-arrowgene -p sdo-multiplayer --bin sdo-arrowgene --bin sdo-server --target aarch64-apple-darwin --target x86_64-apple-darwin
+          mkdir -p target/release
+          for binary in sdo-arrowgene sdo-server; do
+            lipo -create "target/aarch64-apple-darwin/release/$binary" "target/x86_64-apple-darwin/release/$binary" -output "target/release/$binary"
+            codesign --force --sign - "target/release/$binary"
+            lipo "target/release/$binary" -verify_arch arm64 x86_64
+            codesign --verify --all-architectures "target/release/$binary"
+          done
+      - name: Package Linux or macOS binaries
+        if: env.RELEASE_BUILD == 'true' && runner.os != 'Windows'
+        env:
+          PLATFORM: ${{ runner.os == 'macOS' && 'macos-universal' || 'linux-x86_64' }}
+        run: |
+          mkdir -p target/dist
+          tar -czf "target/dist/sdo-$PLATFORM.tar.gz" -C target/release sdo-arrowgene sdo-server
+      - name: Package Windows binaries
+        if: env.RELEASE_BUILD == 'true' && runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force target/dist
+          Compress-Archive -LiteralPath target/release/sdo-arrowgene.exe,target/release/sdo-server.exe -DestinationPath target/dist/sdo-windows-x86_64.zip -Force
+      - name: Upload release archive
+        if: env.RELEASE_BUILD == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ runner.os }}
+          path: app/target/dist/sdo-*
+          if-no-files-found: error
+
+  release:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Tag the tested commit
+        id: version
+        run: |
+          latest_version() {
+            git tag --sort=version:refname "$@" | sed -nE '/^v(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$/p' | tail -n 1
+          }
+          tag=$(latest_version --points-at "$GITHUB_SHA")
+          if [[ -z "$tag" ]]; then
+            latest=$(latest_version)
+            if [[ -z "$latest" ]]; then
+              tag=v$(python3 -c 'import tomllib; print(tomllib.load(open("app/Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+            else
+              tag="${latest%.*}.$(( ${latest##*.} + 1 ))"
+            fi
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Publish release with all three archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          archives=(dist/sdo-linux-x86_64.tar.gz dist/sdo-macos-universal.tar.gz dist/sdo-windows-x86_64.zip)
+          for archive in "${archives[@]}"; do test -s "$archive"; done
+          if ! draft=$(gh release view "$TAG" --json isDraft --jq .isDraft); then
+            gh release create "$TAG" --verify-tag --draft --generate-notes --title "$TAG"
+            draft=true
+          fi
+          if [[ $draft == true ]]; then
+            gh release upload "$TAG" "${archives[@]}" --clobber
+            gh release edit "$TAG" --draft=false
+          else
+            published=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+            for archive in "${archives[@]}"; do
+              grep -Fxq "${archive##*/}" <<< "$published" || { echo "Missing release asset: $archive" >&2; exit 1; }
+            done
+          fi
+
+  publish-image:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and publish standalone server
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sdo-server"
+          tags=(--tag "$image:$RELEASE_TAG")
+          latest_release=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          if [[ "$latest_release" == "$RELEASE_TAG" ]]; then
+            tags+=(--tag "$image:latest")
+          fi
+          docker buildx build --platform linux/amd64,linux/arm64 --push "${tags[@]}" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=$RELEASE_TAG" .

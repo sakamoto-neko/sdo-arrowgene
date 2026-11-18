@@ -1,0 +1,13 @@
+[package]
+name = "sdo-dance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+sdo-assets.workspace = true
+sdo-gameplay.workspace = true
+sha2.workspace = true
+glam.workspace = true

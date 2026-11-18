@@ -1,0 +1,3 @@
+[env]
+# Local checkout default. An explicit environment setting selects another collection.
+SDO_ARROWGENE_DATA = { value = "..", relative = true }

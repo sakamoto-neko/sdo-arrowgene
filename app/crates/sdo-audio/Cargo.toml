@@ -1,0 +1,12 @@
+[package]
+name = "sdo-audio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sha2.workspace = true
+anyhow.workspace = true
+cpal = "0.17.3"
+lewton = "0.10.2"

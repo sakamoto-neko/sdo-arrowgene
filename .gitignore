@@ -1,0 +1,16 @@
+/assets/
+
+# Build products and per-user saves
+**/target/
+**/settings.json
+**/score.json
+.settings-*.tmp
+
+# OS/editor/Python caches
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+.idea/
+.vscode/
+*.log

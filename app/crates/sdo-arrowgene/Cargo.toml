@@ -1,0 +1,35 @@
+[package]
+name = "sdo-arrowgene"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+glam.workspace = true
+sha2.workspace = true
+sdo-multiplayer.workspace = true
+sdo-net.workspace = true
+sdo-asset-loader.workspace = true
+sdo-dance.workspace = true
+anyhow.workspace = true
+pollster.workspace = true
+winit.workspace = true
+wgpu.workspace = true
+sdo-config.workspace = true
+sdo-assets.workspace = true
+sdo-gameplay.workspace = true
+sdo-render.workspace = true
+sdo-audio.workspace = true
+sdo-song = {workspace=true, features=["catalog"]}
+serde.workspace = true
+serde_json.workspace = true
+sdo-ui.workspace = true
+rfd = "0.15.4"
+
+[dev-dependencies]
+image.workspace = true
+
+[[bench]]
+name = "realtime"
+harness = false

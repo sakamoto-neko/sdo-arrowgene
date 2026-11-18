@@ -1,0 +1,65 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+default-members = ["crates/sdo-arrowgene"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+
+[workspace.dependencies]
+# Application modules
+sdo-asset-loader = { path = "crates/sdo-asset-loader" }
+sdo-assets = { path = "crates/sdo-assets" }
+sdo-audio = { path = "crates/sdo-audio" }
+sdo-config = { path = "crates/sdo-config" }
+sdo-dance = { path = "crates/sdo-dance" }
+sdo-gameplay = { path = "crates/sdo-gameplay" }
+sdo-multiplayer = { path = "crates/sdo-multiplayer" }
+sdo-net = { path = "crates/sdo-net" }
+sdo-render = { path = "crates/sdo-render" }
+sdo-song = { path = "crates/sdo-song", default-features = false }
+sdo-ui = { path = "crates/sdo-ui" }
+
+# Shared dependency versions
+anyhow = "1.0.104"
+bytemuck = { version = "1.25.2", features = ["derive"] }
+egui = "0.37.0"
+egui-wgpu = { version = "0.37.0", default-features = false }
+egui-winit = { version = "0.37.0", default-features = false, features = ["clipboard"] }
+glam = "0.33.12"
+flate2 = "1.1.11"
+base64 = "0.22.1"
+image = { version = "0.25.10", default-features = false, features = ["png", "bmp", "tga"] }
+pollster = "1.0.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10.9"
+wgpu = "30.0.1"
+winit = "0.30.13"
+
+# Keep song decoding responsive in development builds.
+[profile.dev.package.lewton]
+opt-level = 2
+
+# Keep asset parsing and hashing responsive in development builds.
+[profile.dev.package.sdo-asset-loader]
+opt-level = 2
+[profile.dev.package.sdo-assets]
+opt-level = 2
+[profile.dev.package.sha2]
+opt-level = 2
+
+# Live cameras perform CPU skinning, resampling and lossless compression.
+[profile.dev.package.sdo-render]
+opt-level = 2
+[profile.dev.package.sdo-net]
+opt-level = 2
+[profile.dev.package.image]
+opt-level = 2
+[profile.dev.package.miniz_oxide]
+opt-level = 2
+[profile.dev.package.flate2]
+opt-level = 2

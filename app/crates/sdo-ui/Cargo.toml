@@ -1,0 +1,23 @@
+[package]
+name = "sdo-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sdo-net.workspace = true
+sdo-gameplay.workspace = true
+sdo-render.workspace = true
+sdo-config.workspace = true
+anyhow.workspace = true
+sdo-song = {workspace=true, features=["catalog"]}
+sdo-assets.workspace = true
+sdo-asset-loader.workspace = true
+egui.workspace = true
+egui-winit.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

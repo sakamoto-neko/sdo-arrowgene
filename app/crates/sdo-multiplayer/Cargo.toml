@@ -1,0 +1,21 @@
+[package]
+name = "sdo-multiplayer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+getrandom = "0.3.4"
+sha2.workspace = true
+sdo-net.workspace = true
+sdo-gameplay.workspace = true
+sdo-song.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[[bin]]
+name = "sdo-server"
+path = "src/main.rs"
