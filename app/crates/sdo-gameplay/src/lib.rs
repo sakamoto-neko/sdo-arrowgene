@@ -56,6 +56,11 @@ pub struct Score {
     pub combo: u32,
     pub max_combo: u32,
 }
+pub fn base_points(counts: [u32; 4], max_combo: u32) -> u64 {
+    let [perfect, cool, bad, miss] = counts.map(u64::from);
+    (50 * perfect + 40 * cool + 20 * bad + 18 * u64::from(max_combo)).saturating_sub(10 * miss)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct JudgmentEvent {
     pub note: Option<usize>,
@@ -384,12 +389,6 @@ impl Practice {
             self.first_unresolved += 1;
         }
         self.score.counts[judgment.index()] += 1;
-        // Practice points only. Native Lua scoring is not yet recovered.
-        self.score.points += match judgment {
-            Judgment::Perfect => 1000,
-            Judgment::Cool => 500,
-            _ => 0,
-        };
         if matches!(judgment, Judgment::Perfect | Judgment::Cool) {
             self.score.hit += 1;
             self.score.combo += 1;
@@ -400,6 +399,7 @@ impl Practice {
                 self.score.missed += 1;
             }
         }
+        self.score.points = base_points(self.score.counts, self.score.max_combo);
         self.last_judgment = Some(JudgmentEvent {
             note: Some(i),
             judgment,
@@ -631,6 +631,37 @@ mod tests {
         let empty = Practice::from_notes(Vec::new(), 0., p.preset());
         assert!(!empty.completed());
     }
+    #[test]
+    fn points_follow_judgments_and_only_reward_increases_in_max_combo() {
+        let notes = (1..=7)
+            .map(|i| Note {
+                lane: Lane::Left,
+                start: f64::from(i),
+                end: f64::from(i),
+            })
+            .collect();
+        let mut p = Practice::from_notes(notes, 8., judgment::find("keyboard").unwrap());
+        // Miss, Perfect, Cool, Bad, Cool, Perfect, Perfect.
+        for (i, (delay, points)) in [
+            (0.3, 0),
+            (0., 58),
+            (0.08, 116),
+            (0.14, 136),
+            (0.08, 176),
+            (0., 226),
+            (0., 294),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            p.advance_to(i as f64 + 1. + delay, [false; 4], false);
+            p.press(Lane::Left);
+            assert_eq!(p.score().points, points);
+        }
+        assert_eq!(p.score().counts, [3, 2, 1, 1]);
+        assert_eq!(p.score().max_combo, 3);
+    }
+
     #[test]
     fn pause_preserves_audio_timing() {
         let mut p = one(false);

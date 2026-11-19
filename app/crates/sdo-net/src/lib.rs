@@ -21,7 +21,7 @@ mod time_wire {
             .ok_or_else(|| D::Error::custom("Non-finite input time"))
     }
 }
-pub const PROTOCOL: u32 = 11;
+pub const PROTOCOL: u32 = 12;
 pub const ROOM_SLOTS: usize = 8;
 pub const MAX_ROOM_PASSWORD_BYTES: usize = 128;
 pub const ROOM_WALK_MIN: [f32; 2] = [0.06, 0.12];
@@ -37,7 +37,7 @@ pub fn walk_position(position: [f32; 2], direction: [i8; 2], seconds: f32) -> [f
 }
 pub const MAX_CHAT_MESSAGES: usize = 100;
 pub const MAX_CHAT_BYTES: usize = 400;
-pub const DEFAULT_ADDRESS: &str = "127.0.0.1:32100";
+pub const DEFAULT_ADDRESS: &str = "arrowgene.net:32100";
 pub const MAX_CHART_BYTES: usize = 2 * 1024 * 1024;
 pub const LATE_US: u64 = 1_500_000;
 pub type PlayerId = u64;

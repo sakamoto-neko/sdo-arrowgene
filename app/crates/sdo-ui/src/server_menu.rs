@@ -105,7 +105,7 @@ impl LobbyView {
                                 action = Action::Multiplayer(LobbyAction::Host);
                             }
                         } else {
-                            field(ui, "Server address", &mut self.preferences.address, "192.168.1.20:32100", false);
+                            field(ui, "Server address", &mut self.preferences.address, sdo_net::DEFAULT_ADDRESS, false);
                             ui.small("A friend's hosted session opens its room directly. Dedicated servers show a room list.");
                             ui.add_space(14.);
                             if theme::primary(ui, "Connect", [ui.available_width(), 42.], !self.preferences.name.trim().is_empty() && !self.preferences.address.trim().is_empty()).clicked() {

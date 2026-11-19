@@ -4,6 +4,7 @@
 **/target/
 **/settings.json
 **/score.json
+**/multiplayer-scores.json
 .settings-*.tmp
 
 # OS/editor/Python caches

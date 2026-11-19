@@ -495,7 +495,7 @@ mod tests {
             content.request(asset::Ui)?,
             None,
             store,
-            crate::scores::ScoreStore::default(),
+            Default::default(),
         )?;
         assert!(app.selector.settings_open);
         assert!(app.selector.selected().is_none());

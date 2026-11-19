@@ -133,7 +133,7 @@ Options:
 Selector: search, click or Up/Down; Enter play; Escape quit.
 Gameplay: D/F/J/K or arrows; Space pause; R restart; F1 next judgment preset;
 -/+ scroll speed; Escape song selector.
-Pad and Keyboard use native tap-window tables. Points and hold scoring remain approximate."
+Pad and Keyboard use native tap-window tables. Hold judgments remain approximate."
                     );
                     return Ok(None);
                 }
@@ -152,7 +152,7 @@ Pad and Keyboard use native tap-window tables. Points and hold scoring remain ap
                         println!("  {}", p.evidence);
                     }
                     println!(
-                        "Pad and Keyboard are the two selectable timing presets. Score and holds still use practice behavior."
+                        "Pad and Keyboard are the two selectable timing presets. Holds still use practice behavior."
                     );
                     return Ok(None);
                 }

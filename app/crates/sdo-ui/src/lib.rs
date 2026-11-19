@@ -49,6 +49,7 @@ pub struct SongSelector {
     pub sources_loading: bool,
     pub source_status: String,
     pub scores: Arc<ScoreBook>,
+    pub multiplayer_scores: Arc<ScoreBook>,
     pub catalog: Catalog,
     pub query: String,
     pub source: Option<String>,
@@ -99,6 +100,7 @@ impl SongSelector {
             sources_loading: false,
             source_status: String::new(),
             scores: Arc::default(),
+            multiplayer_scores: Arc::default(),
             catalog,
             query: String::new(),
             source,
@@ -181,7 +183,7 @@ impl SongSelector {
             &chart.judgment,
             &chart.pattern_sha256,
         );
-        self.scores
+        self.multiplayer_scores
             .scores
             .iter()
             .filter(|record| {

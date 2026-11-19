@@ -109,6 +109,39 @@ struct Match {
     last_report: u64,
     settled_since: Option<u64>,
 }
+impl Match {
+    fn standings(&self, final_result: bool) -> Vec<Standing> {
+        let mut standings: Vec<_> = self
+            .players
+            .iter()
+            .map(|(&id, (_, judge))| judge.standing(id))
+            .collect();
+        let finished =
+            |s: &Standing| !s.forfeited && self.players[&s.player].1.practice().completed();
+        standings.sort_by_key(|s| {
+            (
+                final_result && !finished(s),
+                s.forfeited,
+                std::cmp::Reverse(s.points),
+                s.player,
+            )
+        });
+        if final_result && standings.len() == 4 {
+            let count = standings.iter().take_while(|s| finished(s)).count();
+            let placed = &mut standings[..count];
+            if placed
+                .windows(2)
+                .all(|pair| pair[0].points != pair[1].points)
+            {
+                for (s, percent) in placed.iter_mut().zip([4, 3, 2, 1]) {
+                    s.points += s.points * percent / 100;
+                }
+            }
+        }
+        standings
+    }
+}
+
 struct RoomState {
     view: Room,
     password: Option<crate::password::RoomPassword>,
@@ -858,12 +891,7 @@ impl Hub {
                             ));
                         }
                     }
-                    let mut standings = game
-                        .players
-                        .iter()
-                        .map(|(&id, (_, judge))| judge.standing(id))
-                        .collect::<Vec<_>>();
-                    standings.sort_by_key(|s| (s.forfeited, std::cmp::Reverse(s.points), s.player));
+                    let standings = game.standings(done);
                     let event = Event::Scores {
                         room,
                         round: game.id,
@@ -1097,6 +1125,54 @@ mod tests {
         };
         (spec, raw)
     }
+    #[test]
+    fn placement_bonus_only_applies_to_settled_four_player_individual_results() {
+        let chart = Practice::from_notes(
+            (1..=10)
+                .map(|i| sdo_gameplay::Note {
+                    lane: sdo_gameplay::Lane::Left,
+                    start: f64::from(i),
+                    end: f64::from(i),
+                })
+                .collect(),
+            11.,
+            sdo_gameplay::judgment::find("keyboard").unwrap(),
+        );
+        let mut game = Match {
+            id: 1,
+            start: 0,
+            players: BTreeMap::new(),
+            last_report: 0,
+            settled_since: None,
+        };
+        for cools in 0..4 {
+            let mut run = chart.clone();
+            for i in 1..=10 {
+                let delay = if i <= cools { 0.08 } else { 0. };
+                run.advance_to(f64::from(i) + delay, [false; 4], false);
+                run.press(sdo_gameplay::Lane::Left);
+            }
+            game.players
+                .insert(cools as PlayerId, (0, Referee::new(run)));
+        }
+        let points = |game: &Match, settled| {
+            game.standings(settled)
+                .into_iter()
+                .map(|s| s.points)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(points(&game, false), [680, 670, 660, 650]);
+        assert_eq!(points(&game, true), [707, 690, 673, 656]);
+        assert_eq!(points(&game, true), [707, 690, 673, 656]);
+        game.players.get_mut(&0).unwrap().1.forfeit(11_000_000);
+        assert_eq!(points(&game, true), [696, 679, 663, 680]);
+        game.players.remove(&0);
+        assert_eq!(points(&game, true), [670, 660, 650]);
+        let tied = game.players[&1].1.practice().clone();
+        game.players.insert(0, (0, Referee::new(tied)));
+        assert_eq!(points(&game, true), [670, 670, 660, 650]);
+    }
+
     fn hub() -> Result<Hub> {
         let mut hub = Hub::default();
         for id in 1..=3 {

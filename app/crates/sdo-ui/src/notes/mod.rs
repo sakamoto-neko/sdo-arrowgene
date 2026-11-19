@@ -479,15 +479,7 @@ fn hud(scene: &mut Scene, skin: &FourKeySkin, practice: &Practice, status: &[Str
         1.0,
         white,
     );
-    text(
-        scene,
-        skin,
-        "SCORE / HOLDS: PRACTICE",
-        36.0,
-        638.0,
-        1.0,
-        white,
-    );
+    text(scene, skin, "HOLDS: PRACTICE", 36.0, 638.0, 1.0, white);
     let w = practice.windows();
     text(
         scene,

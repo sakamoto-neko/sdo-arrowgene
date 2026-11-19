@@ -149,13 +149,13 @@ fn escape_during_the_outro_keeps_completed_scores_and_retries_failed_writes() ->
             .best(&key)
             .unwrap()
             .points,
-        1000
+        68
     );
     app.record_completed_score(false);
     app.record_completed_score(false);
     app.keyboard(KeyCode::Escape, true, false)?;
     assert!(app.session.is_none());
-    assert_eq!(app.selector.scores.best(&key).unwrap().points, 1000);
+    assert_eq!(app.selector.scores.best(&key).unwrap().points, 68);
     assert_eq!(ScoreStore::load(score_path.clone()).book.scores.len(), 1);
 
     app.session = Some(session()?);
@@ -288,7 +288,7 @@ fn settings_scores_and_missed_holds_survive_restart_and_render() -> Result<()> {
         app.settings.capture(&app.selector, &app.characters),
         expected
     );
-    assert_eq!(app.scores.book.best(&key).unwrap().points, 1000);
+    assert_eq!(app.scores.book.best(&key).unwrap().points, 68);
     assert_eq!(
         app.characters.preset("male")?.equipment[&CharacterSlot::Shoes],
         "000130_MAN_SHOES.MSH"
@@ -375,7 +375,7 @@ fn settings_scores_and_missed_holds_survive_restart_and_render() -> Result<()> {
         &scene,
     )?;
     let mut completed = NoteDisplay::default().scene(&app.skin, &attempt, &InputState::default());
-    sdo_ui::notes::personal_best(&mut completed, &app.skin, Some(1000));
+    sdo_ui::notes::personal_best(&mut completed, &app.skin, Some(attempt.score().points));
     sdo_ui::notes::score_save_status(&mut completed, &app.skin, true);
     renderer.screenshot(&artifacts.join("score-saved.png"), [960, 720], &completed)?;
     app.equip_character(&WardrobeChange::Reset)?;
@@ -1867,7 +1867,15 @@ fn collection_app(
     let content = AssetLoader::new(CuratedProvider::from_paths(paths)?);
     let catalog = content.request(asset::Catalog)?;
     let ui = content.request(asset::Ui)?;
-    App::new(content, options, catalog, ui, session, settings, scores)
+    App::new(
+        content,
+        options,
+        catalog,
+        ui,
+        session,
+        settings,
+        (scores, Default::default()),
+    )
 }
 fn collection_dances(paths: &CollectionPaths) -> DanceLibrary {
     let root = paths.assets().join("character/motion");
@@ -1910,7 +1918,7 @@ fn multiplayer_local_loading_barrier_scheduled_start_inputs_and_forfeit() -> Res
             ui.clone(),
             None,
             SettingsStore::default(),
-            ScoreStore::default(),
+            Default::default(),
         )
     };
     let mut a = make()?;
@@ -2162,7 +2170,7 @@ fn multiplayer_local_loading_barrier_scheduled_start_inputs_and_forfeit() -> Res
     })?;
     assert_eq!(
         a.session.as_ref().unwrap().score_save,
-        ScoreSaveState::Ineligible
+        ScoreSaveState::Pending
     );
     b.keyboard(KeyCode::KeyD, true, false)?;
     let before = b.session.as_ref().unwrap().audio.position();
@@ -2213,6 +2221,9 @@ fn multiplayer_local_loading_barrier_scheduled_start_inputs_and_forfeit() -> Res
     b.lobby_action(&LobbyAction::ConfirmResults)?;
     assert!(b.session.is_none() && !b.online_running());
     assert!(a.scores.book.scores.is_empty() && b.scores.book.scores.is_empty());
+    assert!(
+        a.multiplayer_scores.book.scores.is_empty() && b.multiplayer_scores.book.scores.is_empty()
+    );
     println!(
         "PASS: both desktop loaders verified {}, audio clocks differ by {:.1} ms, logical inputs and independent forfeit work",
         host_spec.pattern_sha256,
@@ -2234,7 +2245,7 @@ fn room_reference_layout_renders_closeups_and_walking_stage() -> Result<()> {
         content.request(asset::Ui)?,
         None,
         SettingsStore::default(),
-        ScoreStore::default(),
+        Default::default(),
     )?;
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let (_, device, queue, _) = pollster::block_on(sdo_render::request_device(&instance, None))?;

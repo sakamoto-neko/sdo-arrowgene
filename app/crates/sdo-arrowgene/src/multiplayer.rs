@@ -1,7 +1,7 @@
 //! Multiplayer orchestration uses only prepared game assets and the common chart format.
 use crate::{
     app::{App, PlaySelection},
-    session::{PlaySession, ScoreSaveState},
+    session::PlaySession,
 };
 use anyhow::{Context, Result, ensure};
 use sdo_asset_loader::PreparedSong;
@@ -64,6 +64,7 @@ impl App {
         match action {
             LobbyAction::ConfirmResults => {
                 if self.selector.lobby.results {
+                    self.record_completed_score(true);
                     if self.online.client.is_none() {
                         self.disconnect_online();
                     } else {
@@ -489,7 +490,6 @@ impl App {
             "Wait for clock synchronization, then load the room chart again"
         );
         session.pause(true)?;
-        session.score_save = ScoreSaveState::Ineligible;
         self.online.prepared = Some((spec.clone(), session));
         self.net_send(Command::Ready {
             spec,
@@ -665,10 +665,13 @@ impl App {
         let event = match event {
             ClientEvent::Disconnected(reason) => {
                 if self.online.round_room.is_some() && self.session.is_some() {
-                    // A disconnected client cannot receive the final server result.
-                    // Keep its stage and present the available result for acknowledgment.
                     self.online.round_elapsed = self.online_round_seconds().max(0.);
                     self.online.client = None;
+                    self.selector.lobby.status = reason;
+                    if self.selector.lobby.results {
+                        return Ok(());
+                    }
+                    // The connection closed before the server settled this round.
                     self.selector.lobby.results = true;
                     if let Some(player) = self.selector.lobby.player {
                         if let Some(score) = self
@@ -690,7 +693,6 @@ impl App {
                     if let Some(session) = &mut self.session {
                         session.audio.set_paused(true)?;
                     }
-                    self.selector.lobby.status = reason;
                     return Ok(());
                 }
                 self.disconnect_online();
@@ -1085,8 +1087,8 @@ impl App {
                     }
                     self.selector.lobby.standings = standings;
                     self.selector.lobby.results = final_result;
-                    if final_result && self.online.round.is_some_and(|(active, _)| active == round)
-                    {
+                    if final_result {
+                        self.record_completed_score(false);
                         self.online.round_elapsed = elapsed;
                         if let Some(session) = &mut self.session {
                             session.audio.set_paused(true)?;

@@ -38,6 +38,32 @@ impl ScoreStore {
         if autoplay || !from_start || !practice.completed() {
             return Ok(false);
         }
+        let score = practice.score();
+        self.append(key, score.points, score.max_combo, score.counts)?;
+        Ok(true)
+    }
+
+    pub fn record_multiplayer(
+        &mut self,
+        key: ScoreKey,
+        standing: &sdo_net::Standing,
+        note_count: usize,
+    ) -> Result<bool> {
+        let judged: u64 = standing.counts.iter().copied().map(u64::from).sum();
+        if standing.failed || standing.forfeited || note_count == 0 || judged != note_count as u64 {
+            return Ok(false);
+        }
+        self.append(key, standing.points, standing.max_combo, standing.counts)?;
+        Ok(true)
+    }
+
+    fn append(
+        &mut self,
+        key: ScoreKey,
+        points: u64,
+        max_combo: u32,
+        judgments: [u32; 4],
+    ) -> Result<()> {
         anyhow::ensure!(
             key.is_verified(),
             "Cannot save a score without the played pattern's SHA-256"
@@ -45,13 +71,12 @@ impl ScoreStore {
         let path = self.path.as_deref().context(
             "Score history is unavailable. Fix the loading error and restart; existing scores have been left unchanged.",
         )?;
-        let score = practice.score();
         let mut book = self.book.as_ref().clone();
         book.scores.push(ScoreRecord {
             key,
-            points: score.points,
-            max_combo: score.max_combo,
-            judgments: score.counts,
+            points,
+            max_combo,
+            judgments,
             achieved_at_unix: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
@@ -60,7 +85,7 @@ impl ScoreStore {
         // Publish the result only after it is on disk, so a failed write can be retried.
         book.save(path)?;
         self.book = Arc::new(book);
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -101,12 +126,60 @@ mod tests {
                 .best(&key)
                 .unwrap()
                 .points,
-            1000
+            68
         );
         practice.restart();
         assert!(!store.record(key, &practice, true, false)?);
         assert_eq!(store.book.scores.len(), 1);
         std::fs::remove_file(path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn multiplayer_history_keeps_settled_points_separate_from_solo_scores() -> Result<()> {
+        let temp = std::env::temp_dir().join(format!("sdo-score-modes-{}", std::process::id()));
+        let solo_path = temp.join("score.json");
+        let online_path = temp.join("multiplayer-scores.json");
+        let mut solo = ScoreStore::load(solo_path.clone());
+        let mut online = ScoreStore::load(online_path.clone());
+        let key = ScoreKey::new("1", "k", 0, "keyboard", &"a".repeat(64));
+        let mut practice = attempt();
+        practice.advance_to(1., [false; 4], false);
+        practice.press(Lane::Left);
+        assert!(solo.record(key.clone(), &practice, true, false)?);
+        let result = sdo_net::Standing {
+            points: 70, // 68 base points plus the rounded-down first-place bonus.
+            counts: [1, 0, 0, 0],
+            max_combo: 1,
+            ..Default::default()
+        };
+        for incomplete in [
+            sdo_net::Standing {
+                failed: true,
+                ..result.clone()
+            },
+            sdo_net::Standing {
+                forfeited: true,
+                ..result.clone()
+            },
+            sdo_net::Standing {
+                counts: [0; 4],
+                ..result.clone()
+            },
+        ] {
+            assert!(!online.record_multiplayer(key.clone(), &incomplete, 1)?);
+        }
+        assert!(!online_path.exists());
+        assert!(online.record_multiplayer(key.clone(), &result, 1)?);
+        assert_eq!(ScoreBook::load(&solo_path)?.best(&key).unwrap().points, 68);
+        let book = ScoreBook::load(&online_path)?;
+        assert_eq!(book.scores.len(), 1);
+        let saved = book.best(&key).unwrap();
+        assert_eq!(
+            (saved.points, saved.max_combo, saved.judgments),
+            (70, 1, result.counts)
+        );
+        std::fs::remove_dir_all(temp)?;
         Ok(())
     }
 

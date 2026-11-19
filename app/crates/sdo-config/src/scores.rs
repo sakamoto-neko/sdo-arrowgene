@@ -51,19 +51,21 @@ pub struct ScoreBook {
     pub schema_version: u32,
     pub scores: Vec<ScoreRecord>,
 }
+const SCORE_SCHEMA: u32 = 3;
+
 impl Default for ScoreBook {
     fn default() -> Self {
         Self {
-            schema_version: 2,
+            schema_version: SCORE_SCHEMA,
             scores: Vec::new(),
         }
     }
 }
 impl ScoreBook {
     pub fn load(path: &Path) -> Result<Self> {
-        let book: Self = load_preferences(path)?;
+        let mut book: Self = load_preferences(path)?;
         ensure!(
-            book.schema_version == 2,
+            matches!(book.schema_version, 2 | SCORE_SCHEMA),
             "Unsupported score schema {} in {}",
             book.schema_version,
             path.display()
@@ -72,12 +74,18 @@ impl ScoreBook {
             book.scores.iter().all(|s| s.key.is_verified()),
             "Score history contains an invalid pattern SHA-256"
         );
+        if book.schema_version == 2 {
+            for record in &mut book.scores {
+                record.points = sdo_gameplay::base_points(record.judgments, record.max_combo);
+            }
+            book.schema_version = SCORE_SCHEMA;
+        }
         Ok(book)
     }
     pub fn save(&self, path: &Path) -> Result<()> {
         ensure!(
-            self.schema_version == 2 && self.scores.iter().all(|s| s.key.is_verified()),
-            "Scores require schema 2 and a valid pattern SHA-256"
+            self.schema_version == SCORE_SCHEMA && self.scores.iter().all(|s| s.key.is_verified()),
+            "Scores require schema {SCORE_SCHEMA} and a valid pattern SHA-256"
         );
         save_preferences(path, self)
     }
@@ -145,6 +153,42 @@ mod tests {
         std::fs::remove_file(path)?;
         Ok(())
     }
+    #[test]
+    fn previous_scores_are_recalculated_before_comparing_or_saving() -> Result<()> {
+        let path =
+            std::env::temp_dir().join(format!("sdo-score-migrate-{}.json", std::process::id()));
+        let key = ScoreKey::new("1", "k", 0, "keyboard", &"a".repeat(64));
+        let record = ScoreRecord {
+            key: key.clone(),
+            points: 10_000,
+            max_combo: 10,
+            judgments: [10, 0, 0, 0],
+            achieved_at_unix: 1,
+        };
+        let old = ScoreBook {
+            schema_version: 2,
+            scores: vec![
+                record.clone(),
+                ScoreRecord {
+                    points: 6_000,
+                    max_combo: 12,
+                    judgments: [0, 12, 0, 0],
+                    achieved_at_unix: 2,
+                    ..record
+                },
+            ],
+        };
+        std::fs::write(&path, serde_json::to_vec(&old)?)?;
+        let book = ScoreBook::load(&path)?;
+        assert_eq!(book.scores[0].points, 680);
+        assert_eq!(book.best(&key).unwrap().points, 696);
+        assert_eq!(book.last(&key).unwrap().achieved_at_unix, 2);
+        book.save(&path)?;
+        assert_eq!(ScoreBook::load(&path)?, book);
+        std::fs::remove_file(path)?;
+        Ok(())
+    }
+
     #[test]
     fn only_the_new_hash_required_score_format_is_accepted() -> Result<()> {
         let path =

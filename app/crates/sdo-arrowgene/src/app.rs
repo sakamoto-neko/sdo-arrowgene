@@ -63,6 +63,7 @@ pub(crate) struct App {
     pub(crate) active_ui: UiSelection,
     pub(crate) settings: SettingsStore,
     pub(crate) scores: ScoreStore,
+    pub(crate) multiplayer_scores: ScoreStore,
     pub(crate) characters: Arc<CharacterAssets>,
     pub(crate) loader: SongAssetLoader<PlaySelection>,
     pub(crate) prepared_song: Option<PreparedSong<PlaySelection>>,
@@ -82,7 +83,7 @@ impl App {
         assets: Arc<UiAssets>,
         session: Option<PlaySession>,
         mut settings: SettingsStore,
-        mut scores: ScoreStore,
+        (mut scores, mut multiplayer_scores): (ScoreStore, ScoreStore),
     ) -> Result<Self> {
         settings.apply_options(&mut options, &catalog);
         let id = if let Some(id) = options.song.as_deref() {
@@ -171,6 +172,10 @@ impl App {
         selector.set_preview_assets(&assets);
         selector.asset_issues = assets.issues.iter().map(ToString::to_string).collect();
         selector.scores = scores.book.clone();
+        selector.multiplayer_scores = multiplayer_scores.book.clone();
+        if let Some(error) = multiplayer_scores.error.take() {
+            settings.issues.push(error);
+        }
         if let Some(error) = scores.error.take() {
             settings.issues.push(error);
         }
@@ -188,6 +193,7 @@ impl App {
             active_ui,
             settings,
             scores,
+            multiplayer_scores,
             characters,
             loader,
             prepared_song: None,
@@ -221,15 +227,38 @@ impl App {
         };
         let needs_save = matches!(session.score_save, ScoreSaveState::Pending)
             || retry && matches!(session.score_save, ScoreSaveState::Failed(_));
-        if !needs_save || !session.practice.completed() {
+        if !needs_save {
             return;
         }
-        let result = self.scores.record(
-            session.score_key.clone(),
-            &session.practice,
-            session.from_start,
-            self.options.autoplay,
-        );
+        let result = if self.online.round.is_some() {
+            if !self.selector.lobby.results {
+                return;
+            }
+            let Some(standing) = self
+                .selector
+                .lobby
+                .standings
+                .iter()
+                .find(|standing| Some(standing.player) == self.selector.lobby.player)
+            else {
+                return;
+            };
+            self.multiplayer_scores.record_multiplayer(
+                session.score_key.clone(),
+                standing,
+                session.practice.note_count(),
+            )
+        } else {
+            if !session.practice.completed() {
+                return;
+            }
+            self.scores.record(
+                session.score_key.clone(),
+                &session.practice,
+                session.from_start,
+                self.options.autoplay,
+            )
+        };
         if let ScoreSaveState::Failed(previous) = &session.score_save
             && self.selector.error.as_ref() == Some(previous)
         {
@@ -246,6 +275,7 @@ impl App {
             }
         };
         self.selector.scores = self.scores.book.clone();
+        self.selector.multiplayer_scores = self.multiplayer_scores.book.clone();
     }
     pub(crate) fn preview_song(&self) -> Option<&sdo_song::catalog::Song> {
         if !self.selector.lobby.open {
@@ -694,6 +724,12 @@ impl App {
         let view = frame.view();
         let mut action = Action::None;
         if let Some(session) = &mut self.session {
+            let standing = self
+                .selector
+                .lobby
+                .standings
+                .iter()
+                .find(|s| multiplayer_round && Some(s.player) == self.selector.lobby.player);
             let mut scene = if multiplayer_round {
                 let prediction = self
                     .selector
@@ -709,13 +745,7 @@ impl App {
                     sdo_ui::notes::RoundFeedback {
                         grades: &self.online.confirmed,
                         correction: self.online.correction,
-                        totals: self
-                            .selector
-                            .lobby
-                            .standings
-                            .iter()
-                            .find(|s| Some(s.player) == self.selector.lobby.player)
-                            .map(|s| (s.points, s.combo, s.health)),
+                        totals: standing.map(|s| (s.points, s.combo, s.health)),
                     },
                 )
             } else {
@@ -806,8 +836,8 @@ impl App {
                 } else {
                     "Playing"
                 },
-                session.practice.score().points,
-                session.practice.score().combo,
+                standing.map_or(session.practice.score().points, |s| s.points),
+                standing.map_or(session.practice.score().combo, |s| s.combo),
                 if online_lines.is_empty() {
                     "Esc songs | Space pause | F1 preset"
                 } else {

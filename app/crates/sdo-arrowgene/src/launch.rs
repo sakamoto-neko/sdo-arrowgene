@@ -28,6 +28,8 @@ pub(crate) fn run() -> Result<()> {
     };
     let settings_path = sdo_config::settings_path()?;
     let scores = ScoreStore::load(settings_path.with_file_name("score.json"));
+    let multiplayer_scores =
+        ScoreStore::load(settings_path.with_file_name("multiplayer-scores.json"));
     let mut settings = SettingsStore::load(settings_path);
     settings.initialize_sources();
     let (content, source_reports) = sources::open(settings.values.asset_paths.as_ref().unwrap())?;
@@ -132,7 +134,15 @@ pub(crate) fn run() -> Result<()> {
             && !options.verify_song
             && options.audio_test.is_none()
             && options.screenshot.is_none());
-    let mut app = App::new(content, options, catalog, assets, None, settings, scores)?;
+    let mut app = App::new(
+        content,
+        options,
+        catalog,
+        assets,
+        None,
+        settings,
+        (scores, multiplayer_scores),
+    )?;
     app.selector.source_reports = source_reports;
     if open_selector {
         let screenshot = app.options.screenshot.clone();
@@ -257,7 +267,7 @@ pub(crate) fn run() -> Result<()> {
         song.channels
     );
     println!(
-        "GN header field 12: {} (unresolved); {} trailing bytes preserved. Scoring/holds use practice behavior; native tap timing can be selected.",
+        "GN header field 12: {} (unresolved); {} trailing bytes preserved. Holds use practice behavior; native tap timing can be selected.",
         chart.header_field_12, chart.trailing_bytes
     );
     if chart.additional_lane_events > 0 {

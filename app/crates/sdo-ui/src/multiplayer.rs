@@ -1262,8 +1262,16 @@ mod tests {
             sdo_config::ScoreKey::new("local-alias", "k", 0, "keyboard", &chart.pattern_sha256);
         let wrong =
             sdo_config::ScoreKey::new("local-alias", "k", 2, "keyboard", &chart.pattern_sha256);
-        s.scores = std::sync::Arc::new(sdo_config::ScoreBook {
-            schema_version: 2,
+        std::sync::Arc::make_mut(&mut s.scores)
+            .scores
+            .push(sdo_config::ScoreRecord {
+                key: exact.clone(),
+                points: 20000,
+                max_combo: 21,
+                judgments: [0; 4],
+                achieved_at_unix: 0,
+            });
+        s.multiplayer_scores = std::sync::Arc::new(sdo_config::ScoreBook {
             scores: vec![
                 sdo_config::ScoreRecord {
                     key: exact,
@@ -1280,6 +1288,7 @@ mod tests {
                     achieved_at_unix: 0,
                 },
             ],
+            ..sdo_config::ScoreBook::default()
         });
         s.lobby.joined_room = Some(Room {
             keys: 4,
