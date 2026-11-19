@@ -171,19 +171,59 @@ impl LobbyView {
         ui.horizontal(|ui| {
             ui.heading("Rooms on this server");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if !cfg!(target_arch = "wasm32")
-                    && theme::primary(ui, "Create Room", [140., 36.], true).clicked()
-                {
+                if theme::primary(ui, "Create Room", [140., 36.], true).clicked() {
                     self.create_room_open = true;
                     self.room_error.clear();
                 }
             });
         });
-        ui.label("Join a room below.");
-        ui.add_space(16.);
+        let list_height = ((ui.available_height() - 76.) * 0.55).max(80.);
+        let roster_width = (ui.available_width() * 0.32).clamp(110., 290.);
+        let rooms_width =
+            (ui.available_width() - roster_width - ui.spacing().item_spacing.x).max(100.);
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(rooms_width, list_height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| self.room_list(ui, list_height, &mut action),
+            );
+            ui.allocate_ui_with_layout(
+                egui::vec2(roster_width, list_height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.strong(format!("Online players ({})", self.online_players.len()));
+                    egui::ScrollArea::vertical()
+                        .id_salt("online-players")
+                        .max_height(ui.available_height())
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for player in &self.online_players {
+                                let location = player
+                                    .room
+                                    .and_then(|id| self.directory.iter().find(|room| room.id == id))
+                                    .map_or("Lobby", |room| room.name.as_str());
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(&player.name);
+                                    ui.weak(location);
+                                });
+                            }
+                        });
+                },
+            );
+        });
+        ui.separator();
+        ui.strong("Lobby chat");
+        self.chat_history(ui, (ui.available_height() - 42.).max(40.));
+        self.chat_input(ui, &mut action);
+        action
+    }
+
+    fn room_list(&mut self, ui: &mut egui::Ui, height: f32, action: &mut Action) {
         let mut request = None;
         egui::ScrollArea::vertical()
             .id_salt("server-room-list")
+            .max_height(height)
+            .auto_shrink([false, false])
             .show(ui, |ui| {
                 if self.directory.is_empty() {
                     ui.label("No rooms yet.");
@@ -212,7 +252,7 @@ impl LobbyView {
                                             if room.password_protected {
                                                 request = Some((room.id, room.name.clone()));
                                             } else {
-                                                action =
+                                                *action =
                                                     Action::Multiplayer(LobbyAction::Join(room.id));
                                             }
                                         }
@@ -234,7 +274,6 @@ impl LobbyView {
         if let Some((id, name)) = request {
             self.request_room_password(id, name);
         }
-        action
     }
     pub(super) fn show_create_room_prompt(&mut self, ctx: &egui::Context) -> Action {
         if self.private_server || self.room().is_some() {
@@ -254,7 +293,7 @@ impl LobbyView {
             .show(ctx, |ui| {
                 ui.set_width(420.);
                 ui.heading("Create a room");
-                ui.label("You will host this room on the connected server.");
+                ui.label("As room owner, you choose the song and start each round.");
                 ui.add_space(12.);
                 field(
                     ui,

@@ -16,7 +16,7 @@ mod time_wire {
             .ok_or_else(|| D::Error::custom("Non-finite input time"))
     }
 }
-pub const PROTOCOL: u32 = 12;
+pub const PROTOCOL: u32 = 13;
 pub const ROOM_SLOTS: usize = 8;
 pub const MAX_ROOM_PASSWORD_BYTES: usize = 128;
 pub const ROOM_WALK_MIN: [f32; 2] = [0.06, 0.12];
@@ -189,6 +189,12 @@ pub struct Room {
     pub start_us: Option<u64>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnlinePlayer {
+    pub id: PlayerId,
+    pub name: String,
+    pub room: Option<RoomId>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub id: u64,
     pub player: Option<PlayerId>,
@@ -256,6 +262,7 @@ pub enum Command {
         difficulty: u8,
     },
     Chat {
+        room: Option<RoomId>,
         text: String,
     },
     Unavailable {
@@ -292,6 +299,7 @@ pub enum Event {
         server_us: u64,
     },
     Directory(Vec<RoomSummary>),
+    OnlinePlayers(Vec<OnlinePlayer>),
     RoomState(Option<Box<Room>>),
     Movement {
         room: RoomId,
@@ -334,11 +342,11 @@ pub enum Event {
         reason: String,
     },
     Chat {
-        room: RoomId,
+        room: Option<RoomId>,
         message: ChatMessage,
     },
     ChatHistory {
-        room: RoomId,
+        room: Option<RoomId>,
         messages: Vec<ChatMessage>,
     },
     Appearance {

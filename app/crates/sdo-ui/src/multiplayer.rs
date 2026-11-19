@@ -83,6 +83,7 @@ pub struct LobbyView {
     pub hosting: Option<String>,
     pub standings: Vec<Standing>,
     pub results: bool,
+    pub online_players: Vec<sdo_net::OnlinePlayer>,
     pub chat_room: Option<u64>,
     pub messages: Vec<ChatMessage>,
     pub chat_draft: String,
@@ -146,9 +147,9 @@ impl LobbyView {
         portrait.data = data;
     }
 
-    pub fn receive_chat(&mut self, room: u64, message: ChatMessage) {
-        if self.chat_room != Some(room) {
-            self.chat_room = Some(room);
+    pub fn receive_chat(&mut self, room: Option<u64>, message: ChatMessage) {
+        if self.chat_room != room {
+            self.chat_room = room;
             self.messages.clear();
         }
         if self.messages.last().is_none_or(|last| message.id > last.id) {
@@ -323,7 +324,10 @@ impl LobbyView {
                 egui::vec2(width, stage_height),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
-                    self.walking_area(ui, room, egui::vec2(width, stage_height));
+                    let history_height = (stage_height * 0.24).clamp(50., 108.);
+                    let walk_height = stage_height - history_height - ui.spacing().item_spacing.y;
+                    self.walking_area(ui, room, egui::vec2(width, walk_height));
+                    self.chat_history(ui, history_height);
                 },
             );
             ui.allocate_ui_with_layout(
@@ -679,50 +683,31 @@ impl LobbyView {
                 }
             }
         }
-        let recent = self.messages.iter().rev().take(5).collect::<Vec<_>>();
-        let mut lines = Vec::new();
-        for message in recent.iter().rev() {
-            let color = if message.error {
-                egui::Color32::LIGHT_RED
-            } else {
-                egui::Color32::from_rgb(220, 231, 240)
-            };
-            let text = format!("{}: {}", message.name, message.text);
-            let galley = ui.fonts_mut(|fonts| {
-                fonts.layout(
-                    text,
-                    egui::FontId::proportional(14.),
-                    color,
-                    (rect.width() - 24.).min(700.),
-                )
-            });
-            lines.push((galley, color));
-        }
-        let mut y = rect.bottom()
-            - 12.
-            - lines
-                .iter()
-                .map(|(text, _)| text.size().y + 3.)
-                .sum::<f32>();
-        for (text, color) in lines {
-            painter.rect_filled(
-                egui::Rect::from_min_size(
-                    egui::pos2(rect.left() + 8., y),
-                    text.size() + egui::vec2(6., 2.),
-                ),
-                2.,
-                egui::Color32::from_black_alpha(125),
-            );
-            painter.galley(egui::pos2(rect.left() + 11., y), text.clone(), color);
-            y += text.size().y + 3.;
-        }
         if room.members.iter().any(|member| member.walking != [0, 0])
             || self.walk_direction != [0, 0]
         {
             ui.ctx().request_repaint();
         }
     }
-    fn chat_input(&mut self, ui: &mut egui::Ui, action: &mut Action) {
+    pub(super) fn chat_history(&self, ui: &mut egui::Ui, height: f32) {
+        egui::ScrollArea::vertical()
+            .id_salt(("chat-history", self.chat_room))
+            .max_height(height)
+            .auto_shrink([false, false])
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                for message in &self.messages {
+                    let mut text =
+                        egui::RichText::new(format!("{}: {}", message.name, message.text));
+                    if message.error {
+                        text = text.color(egui::Color32::LIGHT_RED);
+                    }
+                    ui.add(egui::Label::new(text).wrap());
+                }
+            });
+    }
+
+    pub(super) fn chat_input(&mut self, ui: &mut egui::Ui, action: &mut Action) {
         ui.add_space(4.);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let valid = !self.chat_draft.trim().is_empty()
@@ -732,10 +717,14 @@ impl LobbyView {
                 egui::Button::new("Send").min_size(egui::vec2(60., 30.)),
             );
             self.send_rect = Some(send.rect);
+            let hint = if self.room().is_some() {
+                "Message the room · Enter to send"
+            } else {
+                "Message the lobby · Enter to send"
+            };
             let response = ui.add_sized(
                 [(ui.available_width() - 46.).max(100.), 30.],
-                egui::TextEdit::singleline(&mut self.chat_draft)
-                    .hint_text("Message the room · Enter to send"),
+                egui::TextEdit::singleline(&mut self.chat_draft).hint_text(hint),
             );
             self.input_rect = Some(response.rect);
             if response.has_focus() {
@@ -1102,7 +1091,7 @@ mod tests {
         );
         s.lobby.scroll_speed = sdo_config::ScrollSpeed::new(7).unwrap();
         s.lobby.receive_chat(
-            4,
+            Some(4),
             ChatMessage {
                 id: 1,
                 player: None,

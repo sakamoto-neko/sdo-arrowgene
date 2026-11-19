@@ -161,6 +161,8 @@ struct Hub {
     rooms: BTreeMap<RoomId, RoomState>,
     next: u64,
     next_chat: u64,
+    lobby_chat: VecDeque<ChatMessage>,
+    roster: Vec<OnlinePlayer>,
     out: Vec<(PlayerId, Event)>,
     dirty: bool,
     directory: Vec<RoomSummary>,
@@ -187,10 +189,16 @@ impl Hub {
             },
         );
     }
+    fn disconnect(&mut self, id: PlayerId) {
+        self.leave(id);
+        if self.players.remove(&id).is_some_and(|p| p.name.is_some()) {
+            self.dirty = true;
+        }
+    }
     fn emit(&mut self, id: PlayerId, event: Event) {
         self.out.push((id, event));
     }
-    fn chat(&mut self, room: RoomId, player: Option<PlayerId>, text: String, error: bool) {
+    fn chat(&mut self, room: Option<RoomId>, player: Option<PlayerId>, text: String, error: bool) {
         self.next_chat += 1;
         let name = player
             .and_then(|id| self.players.get(&id))
@@ -203,13 +211,16 @@ impl Hub {
             text,
             error,
         };
-        let state = self.rooms.get_mut(&room).unwrap();
-        state.chat.push_back(message.clone());
-        if state.chat.len() > MAX_CHAT_MESSAGES {
-            state.chat.pop_front();
+        let history = match room {
+            Some(id) => &mut self.rooms.get_mut(&id).unwrap().chat,
+            None => &mut self.lobby_chat,
+        };
+        history.push_back(message.clone());
+        if history.len() > MAX_CHAT_MESSAGES {
+            history.pop_front();
         }
         for (&id, p) in &self.players {
-            if p.room == Some(room) {
+            if p.name.is_some() && p.room == room {
                 self.out.push((
                     id,
                     Event::Chat {
@@ -220,8 +231,9 @@ impl Hub {
             }
         }
     }
-    fn chat_history(&mut self, id: PlayerId, room: RoomId) {
-        let messages = self.rooms[&room].chat.iter().cloned().collect();
+    fn chat_history(&mut self, id: PlayerId, room: Option<RoomId>) {
+        let history = room.map_or(&self.lobby_chat, |room| &self.rooms[&room].chat);
+        let messages = history.iter().cloned().collect();
         self.emit(id, Event::ChatHistory { room, messages });
     }
     fn appearances_on_join(&mut self, id: PlayerId, room: RoomId) {
@@ -387,7 +399,7 @@ impl Hub {
         player.room = Some(room);
         player.slot = Some(0);
         player.x = 0.1;
-        self.chat_history(id, room);
+        self.chat_history(id, Some(room));
         self.appearances_on_join(id, room);
         self.dirty = true;
         Ok(room)
@@ -421,7 +433,7 @@ impl Hub {
         if self.rooms[&room].view.host == 0 {
             self.rooms.get_mut(&room).unwrap().view.host = id;
         }
-        self.chat_history(id, room);
+        self.chat_history(id, Some(room));
         self.appearances_on_join(id, room);
         self.dirty = true;
         Ok(())
@@ -460,7 +472,11 @@ impl Hub {
                     private_server: self.private_key.is_some(),
                 },
             );
-            self.admit_private(id);
+            if self.private_key.is_some() {
+                self.admit_private(id);
+            } else {
+                self.chat_history(id, None);
+            }
             self.dirty = true;
             return Ok(());
         }
@@ -511,7 +527,9 @@ impl Hub {
                     self.private_key.is_none(),
                     "Disconnect to leave a private server"
                 );
+                self.room_id(id)?;
                 self.leave(id);
+                self.chat_history(id, None);
             }
             Command::Walk { direction } => {
                 let room = self.room_id(id)?;
@@ -656,8 +674,12 @@ impl Hub {
                 state.practice = Some(practice);
                 self.clear_ready(room);
             }
-            Command::Chat { text } => {
-                let room = self.room_id(id)?;
+            Command::Chat { room, text } => {
+                ensure!(
+                    self.players[&id].room == room
+                        && (room.is_some() || self.private_key.is_none()),
+                    "Chat channel changed"
+                );
                 let text = text.trim();
                 ensure!(
                     !text.is_empty()
@@ -689,7 +711,7 @@ impl Hub {
                 while text.len() > MAX_CHAT_BYTES {
                     text.pop();
                 }
-                self.chat(room, None, text, true);
+                self.chat(Some(room), None, text, true);
                 self.dirty = true;
             }
             Command::Start => {
@@ -976,15 +998,32 @@ impl Hub {
             }
             let changed = self.directory != directory;
             self.directory = directory;
+            let roster: Vec<_> = self
+                .players
+                .iter()
+                .filter_map(|(&id, p)| {
+                    Some(OnlinePlayer {
+                        id,
+                        name: p.name.clone()?,
+                        room: p.room,
+                    })
+                })
+                .collect();
+            let roster_changed = roster != self.roster;
+            self.roster = roster;
             for (&id, player) in &mut self.players {
-                if player.name.is_some()
-                    && player.room.is_none()
-                    && (changed || player.needs_directory)
-                {
+                if player.name.is_none() || player.room.is_some() {
+                    continue;
+                }
+                if changed || player.needs_directory {
                     self.out
                         .push((id, Event::Directory(self.directory.clone())));
-                    player.needs_directory = false;
                 }
+                if self.private_key.is_none() && (roster_changed || player.needs_directory) {
+                    self.out
+                        .push((id, Event::OnlinePlayers(self.roster.clone())));
+                }
+                player.needs_directory = false;
             }
         }
     }
@@ -1059,8 +1098,7 @@ fn serve(mut listener: ServerListener, stop: Arc<AtomicBool>, mut hub: Hub) {
         }
         for id in dropped {
             peers.remove(&id);
-            hub.leave(id);
-            hub.players.remove(&id);
+            hub.disconnect(id);
         }
         if tick <= Instant::now() || hub.dirty {
             hub.tick(now);
@@ -1083,8 +1121,7 @@ fn serve(mut listener: ServerListener, stop: Arc<AtomicBool>, mut hub: Hub) {
         }
         for id in failed_writes {
             peers.remove(&id);
-            hub.leave(id);
-            hub.players.remove(&id);
+            hub.disconnect(id);
         }
         if let Err(e) = listener.wait(tick.saturating_duration_since(Instant::now()))
             && e.kind() != std::io::ErrorKind::Interrupted
@@ -1394,6 +1431,23 @@ mod tests {
             },
             0,
         )?;
+        assert!(
+            hub.apply(
+                2,
+                Command::Chat {
+                    room: None,
+                    text: "waiting".into()
+                },
+                0
+            )
+            .is_err()
+        );
+        hub.tick(0);
+        assert!(hub.out.iter().all(|(id, event)| *id != 2
+            || !matches!(
+                event,
+                Event::ChatHistory { .. } | Event::Chat { .. } | Event::OnlinePlayers(_)
+            )));
         assert!(hub.players[&2].room.is_none());
         assert!(hub.out.iter().any(|(id, event)| {
             *id == 2 && matches!(event, Event::RoomPasswordRequired { room: 1, .. })
@@ -1921,7 +1975,7 @@ mod tests {
             messages
                 .iter()
                 .all(|(id, room, message)| [1, 2].contains(id)
-                    && *room == 1
+                    && *room == Some(1)
                     && message.error
                     && message.player.is_none()
                     && message.text.contains("P2")
@@ -1942,12 +1996,89 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn lobby_roster_and_chat_follow_membership() -> Result<()> {
+        let mut hub = hub()?; // P1 and P2 share room 1; P3 is in the lobby.
+        hello(&mut hub, 4)?;
+        hello(&mut hub, 5)?;
+        hub.create_room(5, "Second room", "")?;
+        hub.connect(6); // No handshake.
+        hub.tick(1);
+        let recipients = |hub: &Hub| {
+            hub.out
+                .iter()
+                .filter_map(|(id, event)| matches!(event, Event::OnlinePlayers(_)).then_some(*id))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(recipients(&hub), [3, 4]);
+        assert_eq!(
+            hub.roster
+                .iter()
+                .map(|p| (p.id, p.room))
+                .collect::<Vec<_>>(),
+            [
+                (1, Some(1)),
+                (2, Some(1)),
+                (3, None),
+                (4, None),
+                (5, Some(2))
+            ]
+        );
+        hub.out.clear();
+        let chat = |room, text: &str| Command::Chat {
+            room,
+            text: text.into(),
+        };
+        for (sender, scope, expected) in [
+            (3, None, &[3, 4][..]),
+            (2, Some(1), &[1, 2]),
+            (5, Some(2), &[5]),
+        ] {
+            hub.apply(sender, chat(scope, "hello"), 2)?;
+            let recipients = hub
+                .out
+                .drain(..)
+                .map(|(id, event)| {
+                    assert!(matches!(event,Event::Chat{room,..} if room==scope));
+                    id
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(recipients, expected);
+        }
+        assert!(hub.apply(6, chat(None, "before hello"), 2).is_err());
+        for i in 0..=MAX_CHAT_MESSAGES {
+            hub.apply(3, chat(None, &format!("lobby {i}")), 3)?;
+        }
+        hub.out.clear();
+        hub.join_room(3, 2, "")?;
+        assert!(hub.apply(3, chat(None, "old lobby draft"), 4).is_err());
+        assert!(hub.apply(3, chat(Some(1), "another room"), 4).is_err());
+        hub.tick(4);
+        assert_eq!(recipients(&hub), [4]);
+        hub.out.clear();
+        hub.apply(3, Command::Leave, 5)?;
+        assert!(hub.apply(3, chat(Some(2), "old room draft"), 5).is_err());
+        assert!(hub.out.iter().any(|(id,event)|*id==3 && matches!(event, Event::ChatHistory{room:None,messages}
+            if messages.len()==MAX_CHAT_MESSAGES && messages[0].text=="lobby 1" && messages.last().unwrap().text==format!("lobby {MAX_CHAT_MESSAGES}"))));
+        hub.tick(5);
+        hub.out.clear();
+        hub.disconnect(4);
+        hub.tick(6);
+        assert_eq!(recipients(&hub), [3]);
+        assert!(!hub.roster.iter().any(|p| p.id == 4));
+        hub.out.clear();
+        hub.tick(7);
+        assert!(recipients(&hub).is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn room_chat_is_scoped_bounded_and_restored_on_join() -> Result<()> {
         let mut hub = hub()?;
         assert!(
             hub.apply(
                 3,
                 Command::Chat {
+                    room: Some(1),
                     text: "Outside room".into()
                 },
                 1
@@ -1958,6 +2089,7 @@ mod tests {
         hub.apply(
             2,
             Command::Chat {
+                room: Some(1),
                 text: "Hello host".into(),
             },
             2,
@@ -1971,6 +2103,7 @@ mod tests {
             hub.apply(
                 2,
                 Command::Chat {
+                    room: Some(1),
                     text: "x".repeat(MAX_CHAT_BYTES + 1)
                 },
                 3
@@ -1981,6 +2114,7 @@ mod tests {
             hub.apply(
                 1,
                 Command::Chat {
+                    room: Some(1),
                     text: format!("Message {i}"),
                 },
                 4,
@@ -2000,7 +2134,11 @@ mod tests {
             .out
             .iter()
             .find_map(|(id, event)| {
-                if let Event::ChatHistory { room: 1, messages } = event {
+                if let Event::ChatHistory {
+                    room: Some(1),
+                    messages,
+                } = event
+                {
                     assert_eq!(*id, 3);
                     Some(messages)
                 } else {

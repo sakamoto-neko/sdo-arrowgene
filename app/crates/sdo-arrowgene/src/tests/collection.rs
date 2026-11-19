@@ -2413,7 +2413,7 @@ fn room_reference_layout_renders_closeups_and_walking_stage() -> Result<()> {
             .receive_portrait(index as u64 + 1, Some(portrait));
     }
     app.selector.lobby.receive_chat(
-        1,
+        Some(1),
         ChatMessage {
             id: 1,
             player: Some(1),
@@ -2423,7 +2423,7 @@ fn room_reference_layout_renders_closeups_and_walking_stage() -> Result<()> {
         },
     );
     app.selector.lobby.receive_chat(
-        1,
+        Some(1),
         ChatMessage {
             id: 2,
             player: Some(2),

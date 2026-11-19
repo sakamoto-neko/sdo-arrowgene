@@ -12,10 +12,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use sdo_net::{
-    Command,
-    codec::{MAX_FRAME, Packet},
-};
+use sdo_net::codec::MAX_FRAME;
 
 pub fn routes(mut game: SocketAddr, local_assets: bool) -> Result<Router> {
     if game.ip().is_unspecified() {
@@ -98,10 +95,6 @@ async fn relay(ws: WebSocket, game: SocketAddr) -> Result<()> {
         while let Some(message) = incoming.next().await {
             match message? {
                 Message::Binary(bytes) => {
-                    ensure!(
-                        !matches!(Command::decode(&bytes)?, Command::Create { .. }),
-                        "Browser players may join existing rooms"
-                    );
                     write.write_u32(bytes.len() as u32).await?;
                     write.write_all(&bytes).await?;
                 }

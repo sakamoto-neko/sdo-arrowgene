@@ -1,5 +1,10 @@
 catalog.otf is a glyph subset of Noto Sans CJK SC Regular.
+Copyright © 2014–2021 Adobe.
 Source: https://github.com/notofonts/noto-cjk/tree/main/Sans
+
+unifont.otf and unifont_upper.otf are GNU Unifont 17.0.05, distributed here under the SIL Open Font License.
+Copyright © 1998-2026 Roman Czyborra, Paul Hardy, Qianqian Fang, Andrew Miller, Johnnie Weaver, David Corbett, Ælla Chiana Moskopp, Rebecca Bettencourt, Ho-Seok Ee, et al.
+Source: https://unifoundry.com/pub/unifont/unifont-17.0.05/font-builds/
 
 This Font Software is licensed under the SIL Open Font License,
 Version 1.1.

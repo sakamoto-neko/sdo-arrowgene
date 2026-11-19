@@ -967,6 +967,48 @@ fn asset_choice(
     }
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
+fn add_web_fonts(fonts: &mut egui::FontDefinitions) {
+    let faces: [(&str, &'static [u8]); 3] = [
+        ("catalog", include_bytes!("../fonts/catalog.otf")),
+        ("unifont", include_bytes!("../fonts/unifont.otf")),
+        (
+            "unifont-upper",
+            include_bytes!("../fonts/unifont_upper.otf"),
+        ),
+    ];
+    for (name, bytes) in faces {
+        fonts
+            .font_data
+            .insert(name.into(), egui::FontData::from_static(bytes).into());
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts.families.entry(family).or_default().push(name.into());
+        }
+    }
+}
+
+#[test]
+fn web_font_families_cover_multilingual_chat() {
+    let ctx = egui::Context::default();
+    let mut fonts = egui::FontDefinitions::default();
+    add_web_fonts(&mut fonts);
+    ctx.set_fonts(fonts);
+    let mut output = ctx.run_ui(Default::default(), |ui| {
+        for font in [
+            egui::FontId::proportional(14.),
+            egui::FontId::monospace(14.),
+        ] {
+            for ch in "繁體龜かな한글ไทยΔЖعहא🎵".chars() {
+                assert!(
+                    ui.fonts_mut(|fonts| fonts.has_glyph(&font, ch)),
+                    "Missing {ch}"
+                );
+            }
+        }
+    });
+    output.textures_delta.clear();
+}
+
 /// The selector uses the same wgpu device and window as the note display.
 pub struct SelectorUi {
     context: egui::Context,
@@ -981,21 +1023,9 @@ impl SelectorUi {
     ) -> Self {
         let context = egui::Context::default();
         theme::apply(&context);
-        // Read system fonts in place; no new client assets are imported into assets/.
         let mut fonts = egui::FontDefinitions::default();
         #[cfg(target_arch = "wasm32")]
-        {
-            let name = "catalog";
-            fonts.font_data.insert(
-                name.into(),
-                egui::FontData::from_static(include_bytes!("../fonts/catalog.otf")).into(),
-            );
-            fonts
-                .families
-                .entry(egui::FontFamily::Proportional)
-                .or_default()
-                .push(name.into());
-        }
+        add_web_fonts(&mut fonts);
         #[cfg(not(target_arch = "wasm32"))]
         for (name, candidates) in [
             (

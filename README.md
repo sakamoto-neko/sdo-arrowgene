@@ -33,7 +33,7 @@ Run the dedicated server with both options to play from its asset collection.
 sdo-server --web --assets ./assets
 ```
 
-Open `http://localhost:32101/play/` on the server machine, or substitute its hostname from another device. Select a four-key track and difficulty to play solo. The browser runs the Rust client used on desktop, including the 3D dancer and wardrobe. To play online, select **Multiplayer → Join Server**, connect, join an existing room, then choose **Ready**. The host selects the chart and starts the round.
+Open `http://localhost:32101/play/` on the server machine, or substitute its hostname from another device. Select a four-key track and difficulty to play solo. The browser runs the Rust client used on desktop, including the 3D dancer and wardrobe. To play online, select **Multiplayer → Join Server**, connect, then create or join a room. The room owner selects the chart and starts the round once everyone is ready.
 
 | Option | What it serves |
 | --- | --- |
@@ -51,8 +51,10 @@ The browser bundle is embedded in the server binary. To rebuild it after changin
 
 ## Multiplayer
 
-- **Host a room** from the client under **Multiplayer → Host Server**.
+- **Host a private server** from the desktop client under **Multiplayer → Host Server**.
 - **Join a room** through **Multiplayer → Join Server**. Enter the host’s address, such as `192.168.1.20:32100` on a LAN.
+
+The dedicated server lobby shows online players and their rooms. Anyone in the lobby can create a room or use lobby chat. Inside a room, chat goes only to its members. Each chat keeps the latest 100 messages for scrollback.
 
 Each player needs matching song and chart data. Players using an asset server fetch missing files when they ready up.
 

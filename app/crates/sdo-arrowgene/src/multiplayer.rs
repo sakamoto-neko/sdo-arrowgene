@@ -151,9 +151,6 @@ impl App {
                 }
                 self.selector.lobby.hosting = None;
             }
-            #[cfg(target_arch = "wasm32")]
-            LobbyAction::Create => anyhow::bail!("Join an existing room"),
-            #[cfg(not(target_arch = "wasm32"))]
             LobbyAction::Create => {
                 self.selector.lobby.standings.clear();
                 ensure!(
@@ -256,6 +253,7 @@ impl App {
             LobbyAction::TakeSlot(slot) => self.net_send(Command::TakeSlot { slot: *slot })?,
             LobbyAction::SendChat => {
                 self.net_send(Command::Chat {
+                    room: self.selector.lobby.room().map(|r| r.id),
                     text: self.selector.lobby.chat_draft.trim().into(),
                 })?;
                 self.selector.lobby.chat_draft.clear();
@@ -303,6 +301,7 @@ impl App {
         view.clear_password_prompt();
         view.joined_room = None;
         view.directory.clear();
+        view.online_players.clear();
         view.synchronized = false;
         view.rtt_ms = None;
         view.status = "Disconnected".into();
@@ -729,8 +728,6 @@ impl App {
                 view.private_server = private_server;
                 view.status = if private_server {
                     "Connected to a private server. Joining its room…"
-                } else if cfg!(target_arch = "wasm32") {
-                    "Connected. Join a room."
                 } else {
                     "Connected. Create or join a room."
                 }
@@ -745,6 +742,16 @@ impl App {
                     "Invalid private room password request"
                 );
                 self.selector.lobby.request_room_password(room, name);
+            }
+            Event::OnlinePlayers(players) => {
+                ensure!(
+                    players.len() <= 32
+                        && players
+                            .iter()
+                            .all(|p| !p.name.is_empty() && p.name.len() <= 40),
+                    "Invalid online player list"
+                );
+                self.selector.lobby.online_players = players;
             }
             Event::Directory(directory) => {
                 ensure!(
@@ -933,6 +940,7 @@ impl App {
                 let current_id = current.map(|r| r.id);
                 let stale_load = matches!(&self.online.loading,Some(LoadPurpose::Ready(spec)) if current.and_then(|r|r.chart.as_ref())!=Some(spec));
                 if self.selector.lobby.chat_room != current_id {
+                    self.selector.lobby.chat_draft.clear();
                     self.selector.lobby.chat_room = current_id;
                     self.selector.lobby.messages.clear();
                 }
@@ -1149,9 +1157,7 @@ impl App {
                     message.text.len() <= sdo_net::MAX_CHAT_BYTES && message.name.len() <= 40,
                     "Invalid chat message"
                 );
-                if self.selector.lobby.chat_room == Some(room)
-                    || self.selector.lobby.room().is_some_and(|r| r.id == room)
-                {
+                if self.selector.lobby.chat_room == room {
                     self.selector.lobby.receive_chat(room, message);
                 }
             }
@@ -1163,7 +1169,10 @@ impl App {
                             .all(|m| m.text.len() <= sdo_net::MAX_CHAT_BYTES && m.name.len() <= 40),
                     "Invalid room chat history"
                 );
-                self.selector.lobby.chat_room = Some(room);
+                if self.selector.lobby.chat_room != room {
+                    self.selector.lobby.chat_draft.clear();
+                }
+                self.selector.lobby.chat_room = room;
                 self.selector.lobby.messages.clear();
                 for message in messages {
                     self.selector.lobby.receive_chat(room, message);
@@ -1378,7 +1387,7 @@ mod tests {
         // The server emits admission history and existing appearances before
         // its next tick publishes the new membership in Event::Rooms.
         app.online_event(ClientEvent::Message(Event::ChatHistory {
-            room: 7,
+            room: Some(7),
             messages: vec![],
         }))?;
         assert!(app.selector.lobby.room().is_none());
