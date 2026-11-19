@@ -106,7 +106,8 @@ jobs:
             test -n "$required"
             dpkg --compare-versions "$required" le 2.35
           done
-          mkdir -p dist
+          mkdir -p dist image-binaries/amd64
+          cp app/target/release/sdo-server image-binaries/amd64/
           tar -czf dist/sdo-linux-x86_64.tar.gz -C app/target/release sdo-arrowgene sdo-server
       - name: Smoke-test the archive on a clean Ubuntu 22.04 image
         run: |
@@ -125,6 +126,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          build-contexts: server-binaries=./image-binaries
           platforms: linux/amd64
           load: true
           tags: sdo-server:ci
@@ -145,6 +147,31 @@ jobs:
         with:
           name: release-Linux
           path: dist/sdo-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  server-arm64:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+      - name: Build and check native arm64 server
+        working-directory: app
+        run: |
+          cargo build --release --locked -p sdo-server --bin sdo-server
+          target/release/sdo-server --help
+          tar -czf "$RUNNER_TEMP/server-arm64.tar.gz" -C target/release sdo-server
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-linux-arm64
+          path: ${{ runner.temp }}/server-arm64.tar.gz
           if-no-files-found: error
 
   release:
@@ -205,7 +232,7 @@ jobs:
           fi
 
   publish-image:
-    needs: release
+    needs: [release, server-arm64]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -214,6 +241,19 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-Linux
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: server-linux-arm64
+          path: dist
+      - name: Prepare server binaries for the image
+        run: |
+          mkdir -p image-binaries/{amd64,arm64}
+          tar -xzf dist/sdo-linux-x86_64.tar.gz -C image-binaries/amd64 sdo-server
+          tar -xzf dist/server-arm64.tar.gz -C image-binaries/arm64 sdo-server
       - uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
@@ -244,6 +284,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          build-contexts: server-binaries=./image-binaries
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.image.outputs.tags }}
