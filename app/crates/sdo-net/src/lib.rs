@@ -1,12 +1,7 @@
-//! Asset-independent rooms, synchronized starts and server-side input replay.
-mod client;
-
-mod codec;
-mod transport;
+//! Shared multiplayer commands, events, and wire format.
+pub mod codec;
 use anyhow::{Result, ensure};
-pub use client::{Client, ClientEvent, Clock};
 use serde::{Deserialize, Serialize};
-pub use transport::{ServerConnection, ServerListener};
 
 pub use sdo_gameplay::input::SongTime;
 mod time_wire {

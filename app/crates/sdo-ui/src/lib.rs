@@ -983,6 +983,20 @@ impl SelectorUi {
         theme::apply(&context);
         // Read system fonts in place; no new client assets are imported into assets/.
         let mut fonts = egui::FontDefinitions::default();
+        #[cfg(target_arch = "wasm32")]
+        {
+            let name = "catalog";
+            fonts.font_data.insert(
+                name.into(),
+                egui::FontData::from_static(include_bytes!("../fonts/catalog.otf")).into(),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .push(name.into());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         for (name, candidates) in [
             (
                 "cjk",

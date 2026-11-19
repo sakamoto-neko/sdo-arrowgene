@@ -1,0 +1,13 @@
+[package]
+name = "sdo-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.130"
+sdo-audio.workspace = true

@@ -1,7 +1,8 @@
 //! Lightweight discovery of the curated clothing library. Meshes load on equip.
 use anyhow::{Context, Result, ensure};
+use sdo_platform::assets as fs;
 use serde::Serialize;
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, path::Path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum CharacterBody {
@@ -310,7 +311,7 @@ impl WardrobeCatalog {
     }
     pub fn discover(root: &Path) -> Result<Self> {
         let folder = root.join("skin");
-        if !folder.is_dir() {
+        if !fs::is_dir(&folder) {
             return Ok(Self::default());
         }
         let mut names = Vec::new();

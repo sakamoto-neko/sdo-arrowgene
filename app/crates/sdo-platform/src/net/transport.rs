@@ -1,13 +1,12 @@
-use crate::codec::Packet;
+use super::MAX_BUFFER;
 use anyhow::{Result, ensure};
+use sdo_net::codec::{MAX_FRAME, Packet};
 use std::{
     collections::VecDeque,
     io::{ErrorKind, Read, Write},
     net::TcpStream,
     sync::Arc,
 };
-const MAX_FRAME: usize = 3 * 1024 * 1024;
-const MAX_BUFFER: usize = 6 * 1024 * 1024;
 pub(crate) struct Wire {
     stream: mio::net::TcpStream,
     input: Vec<u8>,
@@ -166,15 +165,16 @@ impl ServerListener {
 /// Typed server side of a connected protocol stream.
 pub struct ServerConnection {
     wire: Wire,
-    movement: std::collections::BTreeMap<crate::PlayerId, (crate::RoomId, u64, crate::Walker)>,
+    movement:
+        std::collections::BTreeMap<sdo_net::PlayerId, (sdo_net::RoomId, u64, sdo_net::Walker)>,
 }
 impl ServerConnection {
-    pub fn poll(&mut self) -> Result<Vec<crate::Command>> {
+    pub fn poll(&mut self) -> Result<Vec<sdo_net::Command>> {
         self.wire.poll()
     }
-    pub fn send(&mut self, event: &crate::Event) -> Result<()> {
+    pub fn send(&mut self, event: &sdo_net::Event) -> Result<()> {
         match event {
-            crate::Event::Movement {
+            sdo_net::Event::Movement {
                 room,
                 state_us,
                 walkers,
@@ -184,7 +184,7 @@ impl ServerConnection {
                 }
                 Ok(())
             }
-            crate::Event::RoomState(_) => {
+            sdo_net::Event::RoomState(_) => {
                 self.movement.clear();
                 self.wire.send(event)
             }
@@ -199,7 +199,7 @@ impl ServerConnection {
                 ticks.entry((room, at)).or_default().push(walker);
             }
             for ((room, state_us), walkers) in ticks {
-                self.wire.send(&crate::Event::Movement {
+                self.wire.send(&sdo_net::Event::Movement {
                     room,
                     state_us,
                     walkers,
@@ -223,17 +223,17 @@ mod tests {
     #[test]
     fn fragmented_frames_reassemble_and_oversized_frames_are_rejected() -> Result<()> {
         let (mut socket, mut wire) = pair();
-        let message = serde_json::to_vec(&crate::Command::Start)?;
+        let message = serde_json::to_vec(&sdo_net::Command::Start)?;
         let len = (message.len() as u32).to_be_bytes();
         socket.write_all(&len[..2])?;
-        assert!(wire.poll::<crate::Command>()?.is_empty());
+        assert!(wire.poll::<sdo_net::Command>()?.is_empty());
         socket.write_all(&len[2..])?;
         socket.write_all(&message[..3])?;
-        assert!(wire.poll::<crate::Command>()?.is_empty());
+        assert!(wire.poll::<sdo_net::Command>()?.is_empty());
         socket.write_all(&message[3..])?;
         let began = std::time::Instant::now();
         let events = loop {
-            let events = wire.poll::<crate::Command>()?;
+            let events = wire.poll::<sdo_net::Command>()?;
             if !events.is_empty() {
                 break events;
             }
@@ -243,11 +243,11 @@ mod tests {
             );
             std::thread::yield_now();
         };
-        assert!(matches!(events[0], crate::Command::Start));
+        assert!(matches!(events[0], sdo_net::Command::Start));
         socket.write_all(&u32::MAX.to_be_bytes())?;
         let began = std::time::Instant::now();
         loop {
-            if wire.poll::<crate::Command>().is_err() {
+            if wire.poll::<sdo_net::Command>().is_err() {
                 break;
             }
             ensure!(

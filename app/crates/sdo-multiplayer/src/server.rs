@@ -1,6 +1,7 @@
 use crate::{referee::Referee, *};
 use anyhow::{Context, Result, ensure};
 use sdo_gameplay::Practice;
+use sdo_platform::net::{ServerConnection, ServerListener};
 use std::{
     collections::{BTreeMap, VecDeque},
     net::SocketAddr,
@@ -2338,7 +2339,7 @@ mod tests {
     }
     #[test]
     fn two_clients_play_a_complete_round_over_loopback() -> Result<()> {
-        use crate::{Client, ClientEvent};
+        use sdo_platform::net::{Client, ClientEvent};
         let server = Server::bind("127.0.0.1:0")?;
         let mut a = Client::connect(server.address.to_string(), "Alice".into())?;
         let mut b = Client::connect(server.address.to_string(), "Bob".into())?;

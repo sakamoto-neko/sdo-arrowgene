@@ -2,14 +2,12 @@ use crate::cli::Options;
 use anyhow::Result;
 use sdo_assets::{CharacterAssets, ClothingCategory, OutfitOverrides, UiAssets, UiSelection};
 use sdo_config::{ScrollSpeed, load_preferences, save_preferences};
+use sdo_platform::Instant;
 use sdo_song::catalog::Catalog;
 use sdo_song::chart::Difficulty;
 use sdo_ui::{SongSelector, SongSort};
 use serde::{Deserialize, Serialize};
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::{path::PathBuf, time::Duration};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

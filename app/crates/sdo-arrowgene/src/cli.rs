@@ -1,11 +1,14 @@
 //! Command-line options; no content is opened while parsing arguments.
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::Result;
+#[cfg(not(target_arch = "wasm32"))]
+use anyhow::{Context, bail, ensure};
 use sdo_assets::{UiAssets, UiSelection};
 use sdo_config::ScrollSpeed;
 use sdo_gameplay::Judgment;
 use sdo_song::Difficulty;
 use std::{collections::HashSet, path::PathBuf};
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) struct Options {
     pub(crate) specified: HashSet<String>,
     pub(crate) selector: bool,
@@ -85,9 +88,11 @@ impl Default for Options {
     }
 }
 impl Options {
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn parse() -> Result<Option<Self>> {
         Self::parse_args(std::env::args().skip(1))
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Option<Self>> {
         let mut out = Self::default();
         let mut args = args.into_iter();

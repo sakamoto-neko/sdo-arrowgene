@@ -1,0 +1,19 @@
+[package]
+name = "sdo-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+sha2.workspace = true
+sdo-net.workspace = true
+sdo-song = {workspace=true, features=["catalog"]}
+sdo-multiplayer.workspace = true
+futures-util = { version = "0.3", features = ["sink"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws"] }
+tokio = { version = "1", features = ["rt", "net", "sync", "io-util", "macros"] }
+sdo-assets.workspace = true
+sdo-dance.workspace = true
+serde_json.workspace = true

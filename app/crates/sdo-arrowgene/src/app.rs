@@ -25,18 +25,19 @@ use sdo_ui::{Action, SelectorUi, SongSelector};
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
-    dpi::LogicalSize,
     event::{ElementState, WindowEvent},
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
+#[cfg(not(target_arch = "wasm32"))]
+use winit::{dpi::LogicalSize, event_loop::EventLoop};
 
 pub(crate) struct WindowState {
     pub(crate) surface: sdo_render::surface::DisplaySurface,
     pub(crate) window: Arc<Window>,
     frame_intervals: Vec<f64>,
-    last_present: Option<std::time::Instant>,
+    last_present: Option<sdo_platform::Instant>,
     pub(crate) renderer: Renderer,
     pub(crate) selector_ui: SelectorUi,
     pub(crate) character_renderer: CharacterRenderer,
@@ -55,6 +56,8 @@ pub(crate) struct PlaySelection {
 pub(crate) struct App {
     pub(crate) network_wake: Option<winit::event_loop::EventLoopProxy<()>>,
     pub(crate) online: crate::multiplayer::Online,
+    #[cfg(target_arch = "wasm32")]
+    pending_outfit: Option<std::sync::mpsc::Receiver<Result<Arc<CharacterAssets>>>>,
     pub(crate) source_reload: Option<std::sync::mpsc::Receiver<crate::sources::SourceEvent>>,
     pub(crate) content: AssetLoader,
     pub(crate) options: Options,
@@ -187,6 +190,8 @@ impl App {
             network_wake: None,
             online: Default::default(),
             source_reload: None,
+            #[cfg(target_arch = "wasm32")]
+            pending_outfit: None,
             content: content.clone(),
             options,
             skin,
@@ -621,6 +626,7 @@ impl App {
         self.sync_preview();
         Ok(())
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn initialize(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
         let window = Arc::new(
             event_loop.create_window(
@@ -638,6 +644,15 @@ impl App {
                 self.options.frame_latency,
             ))?;
         println!("GPU: {name}");
+        self.attach_window(window, surface, device, queue)
+    }
+    pub(crate) fn attach_window(
+        &mut self,
+        window: Arc<Window>,
+        surface: sdo_render::surface::DisplaySurface,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+    ) -> Result<()> {
         let format = surface.format();
         let mut selector_ui = SelectorUi::new(&device, format, Some(&window));
         let character_renderer = CharacterRenderer::new(&device, &queue, &self.characters);
@@ -687,6 +702,21 @@ impl App {
     pub(crate) fn redraw(&mut self) -> Result<bool> {
         self.poll_multiplayer();
         self.poll_sources();
+        #[cfg(target_arch = "wasm32")]
+        if let Some(result) = self
+            .pending_outfit
+            .as_ref()
+            .and_then(|rx| rx.try_recv().ok())
+        {
+            self.pending_outfit = None;
+            match result {
+                Ok(next) => {
+                    self.apply_character(next);
+                    self.sync_settings(true);
+                }
+                Err(error) => self.selector.error = Some(format!("Cannot equip outfit: {error:#}")),
+            }
+        }
         if let Err(error) = self.sync_room_scene() {
             self.selector.lobby.status = format!("Character assets unavailable: {error:#}");
         }
@@ -900,7 +930,7 @@ impl App {
             .present(frame, &state.renderer.device, &state.renderer.queue);
         state.rendered += 1;
         if let Some(limit) = self.options.frames {
-            let now = std::time::Instant::now();
+            let now = sdo_platform::Instant::now();
             if let Some(prev) = state.last_present.replace(now)
                 && state.rendered > 20
             {
@@ -983,7 +1013,23 @@ impl App {
                 outfits
             }
         };
-        let next = self.content.request(asset::Characters(&outfits))?;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.apply_character(self.content.request(asset::Characters(&outfits))?);
+        #[cfg(target_arch = "wasm32")]
+        {
+            let content = self.content.clone();
+            let (send, receive) = std::sync::mpsc::channel();
+            self.pending_outfit = Some(receive);
+            wasm_bindgen_futures::spawn_local(async move {
+                let result =
+                    sdo_platform::assets::hydrate(|| content.request(asset::Characters(&outfits)))
+                        .await;
+                let _ = send.send(result);
+            });
+        }
+        Ok(())
+    }
+    fn apply_character(&mut self, next: Arc<CharacterAssets>) {
         if let Some(state) = &mut self.state {
             state.character_renderer.sync_assets(
                 &state.renderer.device,
@@ -994,18 +1040,17 @@ impl App {
         }
         self.selector.wardrobe.sync(&next);
         self.characters = next;
-        Ok(())
     }
     #[cfg(test)]
     pub(crate) fn keyboard(&mut self, code: KeyCode, down: bool, repeat: bool) -> Result<()> {
-        self.keyboard_at(code, down, repeat, std::time::Instant::now())
+        self.keyboard_at(code, down, repeat, sdo_platform::Instant::now())
     }
     fn keyboard_at(
         &mut self,
         code: KeyCode,
         down: bool,
         repeat: bool,
-        captured: std::time::Instant,
+        captured: sdo_platform::Instant,
     ) -> Result<()> {
         if self.online_running() && (self.selector.lobby.results || code == KeyCode::Escape) {
             return Ok(());
@@ -1100,6 +1145,8 @@ impl App {
     }
     pub(crate) fn fail(&mut self, event_loop: &ActiveEventLoop, error: anyhow::Error) {
         self.preview_audio.stop();
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::error_1(&format!("{error:#}").into());
         self.fatal = Some(error);
         event_loop.exit();
     }
@@ -1108,6 +1155,7 @@ impl ApplicationHandler for App {
     fn user_event(&mut self, _: &ActiveEventLoop, _: ()) {
         self.poll_multiplayer();
     }
+    #[cfg(not(target_arch = "wasm32"))]
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_none()
             && let Err(error) = self.initialize(event_loop)
@@ -1115,8 +1163,10 @@ impl ApplicationHandler for App {
             self.fail(event_loop, error);
         }
     }
+    #[cfg(target_arch = "wasm32")]
+    fn resumed(&mut self, _: &ActiveEventLoop) {}
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        let captured = std::time::Instant::now();
+        let captured = sdo_platform::Instant::now();
         if self.state.as_ref().is_none_or(|s| s.window.id() != id) {
             return;
         }
@@ -1195,7 +1245,7 @@ impl ApplicationHandler for App {
                 self.selector.lobby.status = error.to_string();
             }
             _event_loop.set_control_flow(ControlFlow::WaitUntil(
-                std::time::Instant::now() + std::time::Duration::from_millis(16),
+                sdo_platform::Instant::now() + std::time::Duration::from_millis(16),
             ));
         } else {
             _event_loop.set_control_flow(ControlFlow::Wait);
@@ -1207,6 +1257,7 @@ impl ApplicationHandler for App {
         }
     }
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn run_app(mut app: App) -> Result<()> {
     let event_loop = EventLoop::new()?;
     app.network_wake = Some(event_loop.create_proxy());

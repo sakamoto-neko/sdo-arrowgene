@@ -120,6 +120,11 @@ pub async fn request_device(
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("SDO Arrowgene device"),
+            required_limits: if adapter.get_info().backend == wgpu::Backend::Gl {
+                wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
+            } else {
+                Default::default()
+            },
             ..Default::default()
         })
         .await

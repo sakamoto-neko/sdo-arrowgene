@@ -2,10 +2,11 @@
 use crate::{Command, Event, MAX_CHART_BYTES, SongTime};
 use anyhow::{Context, Result, ensure};
 use serde::{Serialize, de::DeserializeOwned};
+pub const MAX_FRAME: usize = 3 * 1024 * 1024;
 const INPUT: u8 = 1;
 const OFFER: u8 = 2;
 
-pub(crate) trait Packet: Serialize + DeserializeOwned {
+pub trait Packet: Serialize + DeserializeOwned {
     fn encode(&self) -> Result<Vec<u8>>;
     fn decode(bytes: &[u8]) -> Result<Self>;
 }

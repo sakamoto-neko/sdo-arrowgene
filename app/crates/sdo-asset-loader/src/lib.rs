@@ -1,12 +1,19 @@
 //! The frontend's content boundary: typed requests, replaceable providers and
 //! cancellable background preparation. Providers own storage and format translation.
+#[cfg(target_arch = "wasm32")]
+pub mod browser;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod curated;
+#[cfg(not(target_arch = "wasm32"))]
 mod normalized;
 mod pipeline;
 mod preview;
+#[cfg(not(target_arch = "wasm32"))]
 mod remote;
 pub mod request;
 pub mod sources;
+#[cfg(not(target_arch = "wasm32"))]
+mod sources_native;
 #[cfg(test)]
 mod tests;
 
@@ -106,4 +113,31 @@ pub fn verify_catalog(assets: &AssetLoader, catalog: &Catalog) -> Result<sdo_son
         }
     }
     Ok(catalog.stats())
+}
+
+fn apply_manifest(catalog: &mut Catalog, manifest: &sdo_assets::distribution::Manifest) {
+    use sdo_assets::distribution;
+    let listed = |path: &str| manifest.files.contains_key(&distribution::key(path));
+    catalog.songs.retain_mut(|song| {
+        if !listed(&song.audio) {
+            return false;
+        }
+        song.preview = song.preview.take().filter(|p| listed(&p.path));
+        song.dance_moves_paths = song.dance_moves_paths.take().filter(|p| listed(p));
+        song.patterns.retain_mut(|p| {
+            let key = distribution::key(&p.file);
+            let Some(levels) = manifest.charts.get(&key) else {
+                return false;
+            };
+            let Some(file) = manifest.files.get(&key) else {
+                return false;
+            };
+            p.levels = *levels;
+            p.sha256 = file.sha256.clone();
+            p.mode == 4
+                && ["k", "t"].iter().any(|k| p.kind.eq_ignore_ascii_case(k))
+                && levels.iter().any(Option::is_some)
+        });
+        !song.patterns.is_empty()
+    });
 }

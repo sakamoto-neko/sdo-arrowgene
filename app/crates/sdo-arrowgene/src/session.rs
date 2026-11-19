@@ -4,8 +4,8 @@ use sdo_audio::AudioPlayer;
 use sdo_config::ScoreKey;
 use sdo_dance::DancePlayer;
 use sdo_gameplay::{Practice, input::InputState};
+use sdo_platform::Instant;
 use sdo_ui::notes::NoteDisplay;
-use std::time::Instant;
 
 pub(crate) struct PlaySession {
     pub(crate) tail_clock: TailClock,

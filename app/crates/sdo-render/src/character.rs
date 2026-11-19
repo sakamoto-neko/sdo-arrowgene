@@ -6,6 +6,22 @@ use sdo_assets::{CharacterAssets, CharacterSlot, CharacterSurface};
 use wgpu::util::DeviceExt;
 pub mod stage;
 
+/// WebGL2 cannot reinterpret an sRGB attachment as a linear egui texture view.
+pub fn preview_format(device: &wgpu::Device) -> wgpu::TextureFormat {
+    if device.adapter_info().backend == wgpu::Backend::Gl {
+        wgpu::TextureFormat::Rgba8Unorm
+    } else {
+        wgpu::TextureFormat::Rgba8UnormSrgb
+    }
+}
+pub fn preview_view_formats(format: wgpu::TextureFormat) -> &'static [wgpu::TextureFormat] {
+    if format == wgpu::TextureFormat::Rgba8UnormSrgb {
+        &[wgpu::TextureFormat::Rgba8Unorm]
+    } else {
+        &[]
+    }
+}
+
 pub const PREVIEW_SIZE: [u32; 2] = [640, 720];
 pub const ITEM_PREVIEW_SIZE: [u32; 2] = [160, 160];
 pub const PORTRAIT_SIZE: [u32; 2] = [96, 96];
@@ -255,7 +271,7 @@ impl CharacterRenderer {
                     }),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        format: preview_format(device),
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -294,16 +310,12 @@ impl CharacterRenderer {
                 dimension: wgpu::TextureDimension::D2,
                 format,
                 usage,
-                view_formats: if format == wgpu::TextureFormat::Rgba8UnormSrgb {
-                    &[wgpu::TextureFormat::Rgba8Unorm]
-                } else {
-                    &[]
-                },
+                view_formats: preview_view_formats(format),
             })
         };
         let texture = target(
             "character preview",
-            wgpu::TextureFormat::Rgba8UnormSrgb,
+            preview_format(device),
             wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC,

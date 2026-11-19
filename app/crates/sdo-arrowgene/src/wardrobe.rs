@@ -16,8 +16,10 @@ struct CachedPreview {
     used: u64,
 }
 pub struct WardrobeThumbnails {
-    requests: mpsc::SyncSender<ClothingPreviewKey>,
-    results: mpsc::Receiver<(ClothingPreviewKey, Result<Arc<CharacterAssets>>)>,
+    jobs: sdo_platform::jobs::Jobs<
+        ClothingPreviewKey,
+        (ClothingPreviewKey, Result<Arc<CharacterAssets>>),
+    >,
     pending: Option<ClothingPreviewKey>,
     renderer: CharacterRenderer,
     cache: BTreeMap<ClothingPreviewKey, CachedPreview>,
@@ -25,19 +27,12 @@ pub struct WardrobeThumbnails {
 }
 impl WardrobeThumbnails {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, assets: AssetLoader) -> Self {
-        let (requests, jobs) = mpsc::sync_channel::<ClothingPreviewKey>(1);
-        let (completed, results) = mpsc::sync_channel(1);
-        std::thread::spawn(move || {
-            while let Ok(key) = jobs.recv() {
-                let result = assets.request(request::ClothingPreview(&key));
-                if completed.send((key, result)).is_err() {
-                    break;
-                }
-            }
+        let jobs = sdo_platform::jobs::Jobs::new(1, move |key: ClothingPreviewKey| {
+            let result = assets.request(request::ClothingPreview(&key));
+            (key, result)
         });
         Self {
-            requests,
-            results,
+            jobs,
             pending: None,
             renderer: CharacterRenderer::new_item_preview(device, queue),
             cache: BTreeMap::new(),
@@ -65,7 +60,7 @@ impl WardrobeThumbnails {
                 entry.used = self.tick;
             }
         }
-        let completed = match self.results.try_recv() {
+        let completed = match self.jobs.poll() {
             Ok(result) => Some(result),
             Err(mpsc::TryRecvError::Disconnected) => self
                 .pending
@@ -115,7 +110,7 @@ impl WardrobeThumbnails {
         if self.pending.is_none()
             && let Some(key) = visible.iter().find(|key| !self.cache.contains_key(*key))
         {
-            if self.requests.send(key.clone()).is_ok() {
+            if self.jobs.send(key.clone()).is_ok() {
                 self.pending = Some(key.clone());
             } else {
                 let thumbnail = ClothingThumbnail::Failed("Preview loader stopped".into());
@@ -160,11 +155,13 @@ impl WardrobeThumbnails {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: self.renderer.texture.format(),
             usage: wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_DST
                 | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+            view_formats: sdo_render::character::preview_view_formats(
+                self.renderer.texture.format(),
+            ),
         });
         let mut encoder = device.create_command_encoder(&Default::default());
         encoder.copy_texture_to_texture(
@@ -180,6 +177,7 @@ impl WardrobeThumbnails {
         let id = ui.register_character_preview(device, &view);
         Ok((texture, ClothingThumbnail::Ready(id)))
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn is_ready(&self, view: &WardrobeView) -> bool {
         view.visible_previews()
             .iter()

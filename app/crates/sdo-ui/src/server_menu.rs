@@ -59,14 +59,15 @@ impl LobbyView {
                     if ui.button("Back").clicked() { action = Action::Multiplayer(LobbyAction::Exit); }
                     ui.add_space(12.);
                     ui.label(RichText::new("Play together").size(30.).strong());
-                    ui.label("Start a server for friends, or connect to one that is already running.");
+                    if cfg!(target_arch="wasm32") { ui.label("Join a server to play in a multiplayer room."); }
+                    else {ui.label("Start a server for friends, or connect to one that is already running.");}
                     ui.add_space(24.);
-                    ui.columns(2, |columns| {
-                        if card(&mut columns[0], "Host Server",
+                    ui.columns(if cfg!(target_arch="wasm32"){1}else{2}, |columns| {
+                        if !cfg!(target_arch="wasm32") && card(&mut columns[0], "Host Server",
                             "Open a room on this computer. Friends connect directly to your session.") {
                             self.server_menu = ServerMenu::Host;
                         }
-                        if card(&mut columns[1], "Join Server",
+                        if card(columns.last_mut().unwrap(), "Join Server",
                             "Enter a friend's server address. Join a room there, or enter their private room directly.") {
                             self.server_menu = ServerMenu::Join;
                         }
@@ -170,20 +171,22 @@ impl LobbyView {
         ui.horizontal(|ui| {
             ui.heading("Rooms on this server");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if theme::primary(ui, "Create Room", [140., 36.], true).clicked() {
+                if !cfg!(target_arch = "wasm32")
+                    && theme::primary(ui, "Create Room", [140., 36.], true).clicked()
+                {
                     self.create_room_open = true;
                     self.room_error.clear();
                 }
             });
         });
-        ui.label("Join a room below, or create your own room on this server.");
+        ui.label("Join a room below.");
         ui.add_space(16.);
         let mut request = None;
         egui::ScrollArea::vertical()
             .id_salt("server-room-list")
             .show(ui, |ui| {
                 if self.directory.is_empty() {
-                    ui.label("No rooms yet. Create one to get started.");
+                    ui.label("No rooms yet.");
                 }
                 for room in &self.directory {
                     ui.push_id(room.id, |ui| {

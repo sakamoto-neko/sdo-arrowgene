@@ -7,10 +7,7 @@ use sdo_dance::{DancePlayer, ReplayDance};
 use sdo_net::{Appearance, ChartSpec, PlayerId};
 use sdo_render::character::stage::StageModel;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, mpsc},
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 fn unscoped(id: &str) -> &str {
     id.rsplit_once("::").map_or(id, |(_, v)| v)
@@ -77,6 +74,7 @@ impl Actor {
         .transpose()
     }
 }
+#[derive(Clone)]
 pub(crate) struct Load {
     pub player: PlayerId,
     pub generation: u64,
@@ -92,40 +90,23 @@ pub(crate) struct Loaded {
     pub result: Result<(Actor, Option<StageModel>)>,
 }
 pub(crate) struct SceneLoader {
-    jobs: mpsc::SyncSender<Load>,
-    completed: mpsc::Receiver<Loaded>,
+    jobs: sdo_platform::jobs::Jobs<Load, Loaded>,
 }
 impl SceneLoader {
     pub fn new(gpu: sdo_render::Readback, content: AssetLoader) -> Self {
-        let (jobs, requests) = mpsc::sync_channel::<Load>(16);
-        let (finished, completed) = mpsc::sync_channel(16);
-        std::thread::Builder::new()
-            .name("room-assets".into())
-            .spawn(move || {
-                while let Ok(load) = requests.recv() {
-                    let result = prepare(&gpu, &content, &load);
-                    if finished
-                        .send(Loaded {
-                            player: load.player,
-                            generation: load.generation,
-                            result,
-                        })
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            })
-            .expect("Cannot create room asset worker");
-        Self { jobs, completed }
+        Self {
+            jobs: sdo_platform::jobs::Jobs::new(16, move |load: Load| Loaded {
+                player: load.player,
+                generation: load.generation,
+                result: prepare(&gpu, &content, &load),
+            }),
+        }
     }
     pub fn request(&self, load: Load) -> Result<()> {
-        self.jobs
-            .try_send(load)
-            .map_err(|_| anyhow::anyhow!("Room asset loading queue is full"))
+        self.jobs.send(load)
     }
     pub fn poll(&self) -> Option<Loaded> {
-        self.completed.try_recv().ok()
+        self.jobs.poll().ok()
     }
 }
 fn prepare(
@@ -253,13 +234,13 @@ pub(crate) struct LocalWalk {
     position: [f32; 2],
     direction: [i8; 2],
     facing: [i8; 2],
-    at: std::time::Instant,
+    at: sdo_platform::Instant,
     error: [f32; 2],
     observed_us: u64,
     command_us: u64,
 }
 impl LocalWalk {
-    pub fn new(m: &sdo_net::Member, now: std::time::Instant) -> Self {
+    pub fn new(m: &sdo_net::Member, now: sdo_platform::Instant) -> Self {
         Self {
             position: [m.x, m.y],
             direction: m.walking,
@@ -270,7 +251,7 @@ impl LocalWalk {
             command_us: 0,
         }
     }
-    pub fn sample(&self, now: std::time::Instant) -> ([f32; 2], f32, bool) {
+    pub fn sample(&self, now: sdo_platform::Instant) -> ([f32; 2], f32, bool) {
         let dt = now.saturating_duration_since(self.at).as_secs_f32();
         let pos = sdo_net::walk_position(self.position, self.direction, dt);
         let weight = (1. - dt / 0.05).clamp(0., 1.);
@@ -284,7 +265,7 @@ impl LocalWalk {
             self.direction != [0, 0],
         )
     }
-    pub fn turn(&mut self, direction: [i8; 2], now: std::time::Instant, server_us: Option<u64>) {
+    pub fn turn(&mut self, direction: [i8; 2], now: sdo_platform::Instant, server_us: Option<u64>) {
         self.position = self.sample(now).0;
         self.at = now;
         self.error = [0.; 2];
@@ -297,7 +278,7 @@ impl LocalWalk {
     pub fn observe(
         &mut self,
         m: &sdo_net::Member,
-        now: std::time::Instant,
+        now: sdo_platform::Instant,
         server_us: Option<u64>,
     ) {
         if m.state_us <= self.observed_us
@@ -540,10 +521,10 @@ impl crate::app::App {
             .online
             .client
             .as_ref()
-            .and_then(sdo_net::Client::server_us)
+            .and_then(sdo_platform::net::Client::server_us)
             .unwrap_or(0)
             .saturating_sub(75_000);
-        let now = std::time::Instant::now();
+        let now = sdo_platform::Instant::now();
         let movement = room
             .members
             .iter()

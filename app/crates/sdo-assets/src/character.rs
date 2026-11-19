@@ -6,10 +6,10 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use glam::{Mat4, Vec3};
+use sdo_platform::assets as fs;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -344,7 +344,7 @@ impl CharacterAssets {
     }
     pub(crate) fn load(paths: &CollectionPaths) -> Result<Self> {
         let root = paths.assets().join("character");
-        if !root.is_dir() {
+        if !fs::is_dir(&root) {
             return Ok(Self {
                 root: root.clone(),
                 presets: Vec::new(),
@@ -369,9 +369,7 @@ impl CharacterAssets {
         outfits: Outfits,
         wardrobe: Option<Arc<WardrobeCatalog>>,
     ) -> Result<Self> {
-        let root = root
-            .canonicalize()
-            .context("Cannot open assets/character")?;
+        let root = fs::canonicalize(root).context("Cannot open assets/character")?;
         let wardrobe = match wardrobe {
             Some(catalog) => catalog,
             None => Arc::new(WardrobeCatalog::discover(&root)?),
@@ -1180,6 +1178,7 @@ fn parse_mesh(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     struct Fixture(PathBuf);

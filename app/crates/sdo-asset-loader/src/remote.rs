@@ -40,7 +40,7 @@ fn matches_file(input: &mut fs::File, file: &AssetFile) -> Result<bool> {
     }
     let mut hash = Sha256::new();
     let n = io::copy(&mut input.take(file.bytes + 1), &mut hash)?;
-    Ok(n == file.bytes && format!("{:x}", hash.finalize()) == file.sha256)
+    Ok(file.matches(n, hash))
 }
 fn write_atomic(path: &Path, write: impl FnOnce(&mut fs::File) -> Result<()>) -> Result<()> {
     let parent = path.parent().context("Missing destination directory")?;
@@ -113,19 +113,7 @@ impl RemoteCache {
         base: &Path,
         refresh: bool,
     ) -> Result<Option<(Arc<Self>, PathBuf)>> {
-        let mut endpoint = Url::parse(url.trim()).context("Invalid asset server URL")?;
-        ensure!(
-            matches!(endpoint.scheme(), "http" | "https")
-                && endpoint.host().is_some()
-                && endpoint.query().is_none()
-                && endpoint.fragment().is_none()
-                && endpoint.username().is_empty()
-                && endpoint.password().is_none(),
-            "Use an HTTP(S) asset URL without credentials, query, or fragment"
-        );
-        if !endpoint.path().ends_with('/') {
-            endpoint.path_segments_mut().unwrap().push("");
-        }
+        let endpoint = sdo_platform::remote::endpoint(url)?;
         let dir = base.join(format!("{:x}", Sha256::digest(endpoint.as_str())));
         let saved = dir.join("manifest.json");
         if !refresh && !saved.is_file() {
@@ -191,7 +179,7 @@ impl RemoteCache {
         });
         let mut local_defaults = cache.local.is_some();
         for (key, file) in &cache.manifest.files {
-            if key == "music.json" || key.starts_with("ui/") {
+            if distribution::essential(key) {
                 let verified = cache.resolve(key, refresh, &mut |_| true)?;
                 if !cache.local.as_ref().is_some_and(|root| {
                     verified.starts_with(root)
@@ -229,29 +217,7 @@ impl RemoteCache {
     pub fn catalog(&self, root: &Path) -> Result<sdo_song::Catalog> {
         let mut catalog =
             sdo_song::Catalog::parse(&fs::read(resolve_resource(root, "music.json")?)?)?;
-        let listed = |path: &str| self.manifest.files.contains_key(&distribution::key(path));
-        catalog.songs.retain_mut(|song| {
-            if !listed(&song.audio) {
-                return false;
-            }
-            song.preview = song.preview.take().filter(|p| listed(&p.path));
-            song.dance_moves_paths = song.dance_moves_paths.take().filter(|p| listed(p));
-            song.patterns.retain_mut(|p| {
-                let key = distribution::key(&p.file);
-                let Some(levels) = self.manifest.charts.get(&key) else {
-                    return false;
-                };
-                let Some(file) = self.manifest.files.get(&key) else {
-                    return false;
-                };
-                p.levels = *levels;
-                p.sha256 = file.sha256.clone();
-                p.mode == 4
-                    && ["k", "t"].iter().any(|k| p.kind.eq_ignore_ascii_case(k))
-                    && levels.iter().any(Option::is_some)
-            });
-            !song.patterns.is_empty()
-        });
+        super::apply_manifest(&mut catalog, &self.manifest);
         Ok(catalog)
     }
     pub fn resolve(
@@ -296,7 +262,7 @@ impl RemoteCache {
                     ensure!(progress(0.), "Asset request cancelled");
                     let mut response = self
                         .client
-                        .get(self.endpoint.join(&format!("files/{}", file.sha256))?)
+                        .get(file.url(&self.endpoint)?)
                         .send()?
                         .error_for_status()?;
                     write_atomic(&object, |out| {
@@ -317,10 +283,7 @@ impl RemoteCache {
                             hash.update(&buf[..count]);
                             out.write_all(&buf[..count])?;
                         }
-                        ensure!(
-                            n == file.bytes && format!("{:x}", hash.finalize()) == file.sha256,
-                            "Asset verification failed for {id}"
-                        );
+                        ensure!(file.matches(n, hash), "Asset verification failed for {id}");
                         Ok(())
                     })?;
                     self.downloads.fetch_add(1, Ordering::Relaxed);

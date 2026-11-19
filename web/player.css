@@ -1,0 +1,23 @@
+:root {
+  color-scheme: dark;
+  font: 16px/1.5 system-ui, sans-serif;
+  color: #eff3ff;
+  background: #101322;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+h1 { font-size: clamp(3rem, 6vw, 5.4rem); letter-spacing: -.075em; line-height: .99; }
+label { display: block; color: #c7d2e4; margin-bottom: 6px; }
+.address { display: flex; gap: 9px; }
+input, button {
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: #1b2131;
+  border: 1px solid #353c52;
+  border-radius: 7px;
+  padding: 11px;
+}
+input { flex: 1; }
+button { cursor: pointer; font-weight: 700; }
+:focus-visible { outline: 3px solid #87deff; outline-offset: 2px; }

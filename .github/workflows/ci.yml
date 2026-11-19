@@ -37,12 +37,12 @@ jobs:
       - run: cargo test --workspace --locked
       - name: Build Windows release binaries
         if: env.RELEASE_BUILD == 'true' && runner.os == 'Windows'
-        run: cargo build --release --locked -p sdo-arrowgene -p sdo-multiplayer --bin sdo-arrowgene --bin sdo-server
+        run: cargo build --release --locked -p sdo-arrowgene -p sdo-server --bin sdo-arrowgene --bin sdo-server
       - name: Build universal macOS binaries
         if: env.RELEASE_BUILD == 'true' && runner.os == 'macOS'
         run: |
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
-          cargo build --release --locked -p sdo-arrowgene -p sdo-multiplayer --bin sdo-arrowgene --bin sdo-server --target aarch64-apple-darwin --target x86_64-apple-darwin
+          cargo build --release --locked -p sdo-arrowgene -p sdo-server --bin sdo-arrowgene --bin sdo-server --target aarch64-apple-darwin --target x86_64-apple-darwin
           mkdir -p target/release
           for binary in sdo-arrowgene sdo-server; do
             lipo -create "target/aarch64-apple-darwin/release/$binary" "target/x86_64-apple-darwin/release/$binary" -output "target/release/$binary"
@@ -96,7 +96,7 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo test --workspace --locked
-          cargo build --release --locked -p sdo-arrowgene -p sdo-multiplayer --bin sdo-arrowgene --bin sdo-server
+          cargo build --release --locked -p sdo-arrowgene -p sdo-server --bin sdo-arrowgene --bin sdo-server
       - name: Check required glibc versions and package Linux binaries
         shell: bash
         run: |

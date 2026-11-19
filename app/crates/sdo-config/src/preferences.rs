@@ -1,9 +1,10 @@
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::path::{Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))]
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -56,6 +57,7 @@ fn beside_executable(executable: &Path) -> Result<PathBuf> {
         .context("Executable has no parent directory")?
         .join("settings.json"))
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_preferences<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
     match fs::read(path) {
         Ok(raw) => serde_json::from_slice(&raw)
@@ -81,6 +83,7 @@ pub fn save_scroll_speed(path: &Path, speed: ScrollSpeed) -> Result<()> {
     save_preferences(path, &document)
 }
 /// Replace a complete document only after its temporary file has been flushed.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_preferences<T: Serialize>(path: &Path, document: &T) -> Result<()> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let parent = path.parent().context("Settings path has no parent")?;
@@ -143,4 +146,17 @@ mod tests {
         assert_eq!(serde_json::from_str::<ScrollSpeed>("8")?.value(), 8);
         Ok(())
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_preferences<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
+    sdo_platform::storage::get(path)?
+        .map(|s| serde_json::from_str(&s))
+        .transpose()
+        .map(|v| v.unwrap_or_default())
+        .map_err(Into::into)
+}
+#[cfg(target_arch = "wasm32")]
+pub fn save_preferences<T: Serialize>(path: &Path, document: &T) -> Result<()> {
+    sdo_platform::storage::set(path, &serde_json::to_string(document)?)
 }

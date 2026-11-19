@@ -15,12 +15,7 @@ pub const DEFAULT_UI: [&str; 5] = [
     "ui/health/health.json",
 ];
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AssetFile {
-    pub path: String,
-    pub bytes: u64,
-    pub sha256: String,
-}
+pub use sdo_platform::remote::AssetFile;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub version: u32,
@@ -54,8 +49,8 @@ fn reserved_name(part: &str) -> bool {
         })
 }
 
-pub fn permitted(path: &str) -> bool {
-    if path.split('/').any(|part| {
+fn safe_path(path: &str) -> bool {
+    !path.split('/').any(|part| {
         part.is_empty()
             || part.starts_with('.')
             || part.ends_with([' ', '.'])
@@ -63,7 +58,10 @@ pub fn permitted(path: &str) -> bool {
                 .chars()
                 .any(|c| c.is_control() || "\\:*?\"<>|".contains(c))
             || reserved_name(part)
-    }) {
+    })
+}
+pub fn permitted(path: &str) -> bool {
+    if !safe_path(path) {
         return false;
     }
     let path = key(path);
@@ -84,6 +82,52 @@ pub fn permitted(path: &str) -> bool {
             .any(|entry| entry.rsplit_once('/').unwrap().0 == dir)
             && matches!(ext, "bmp" | "png" | "dds" | "tga"))
 }
+pub fn essential(id: &str) -> bool {
+    id == "music.json" || id.starts_with("ui/")
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct CharacterManifest {
+    pub files: BTreeMap<String, AssetFile>,
+    pub initial: std::collections::BTreeSet<String>,
+}
+impl CharacterManifest {
+    pub fn validate(&self) -> Result<()> {
+        for (id, file) in &self.files {
+            ensure!(
+                file.valid_metadata(MAX_FILE)
+                    && *id == key(&file.path)
+                    && character_resource(&file.path),
+                "Invalid character asset: {id}"
+            );
+        }
+        ensure!(
+            self.initial.iter().all(|id| self.files.contains_key(id)),
+            "Unknown initial character asset"
+        );
+        Ok(())
+    }
+}
+pub fn character_resource(path: &str) -> bool {
+    if !safe_path(path) {
+        return false;
+    }
+    let key = key(path);
+    let Some((dir, name)) = key.rsplit_once('/') else {
+        return false;
+    };
+    let ext = Path::new(name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("");
+    match dir {
+        "character" => ext == "hrc",
+        "character/skin" => matches!(ext, "msh" | "dds" | "bmp" | "png" | "tga"),
+        "character/motion" => ext == "mot",
+        dir if dir == "character/presets" || dir.starts_with("character/presets/") => ext == "json",
+        _ => false,
+    }
+}
 impl Manifest {
     pub fn validate(&self) -> Result<()> {
         ensure!(
@@ -93,14 +137,7 @@ impl Manifest {
         );
         for (id, file) in &self.files {
             ensure!(
-                *id == key(&file.path)
-                    && permitted(&file.path)
-                    && file.bytes <= MAX_FILE
-                    && file.sha256.len() == 64
-                    && file
-                        .sha256
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                *id == key(&file.path) && permitted(&file.path) && file.valid_metadata(MAX_FILE),
                 "Invalid asset manifest entry: {id}"
             );
         }

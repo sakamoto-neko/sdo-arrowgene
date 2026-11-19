@@ -65,6 +65,9 @@ enum Event<C> {
     Complete(u64, Box<Result<PreparedSong<C>>>),
 }
 pub struct SongAssetLoader<C: Send + 'static = ()> {
+    #[cfg(target_arch = "wasm32")]
+    browser: (AssetLoader, mpsc::Sender<Event<C>>),
+    #[cfg(not(target_arch = "wasm32"))]
     requests: mpsc::Sender<(u64, LoadRequest<C>)>,
     events: mpsc::Receiver<Event<C>>,
     generation: Arc<AtomicU64>,
@@ -73,38 +76,46 @@ pub struct SongAssetLoader<C: Send + 'static = ()> {
 }
 impl<C: Send + 'static> SongAssetLoader<C> {
     pub fn new(assets: AssetLoader) -> Self {
-        let (requests, jobs) = mpsc::channel::<(u64, LoadRequest<C>)>();
         let (events, receiver) = mpsc::channel();
         let generation = Arc::new(AtomicU64::new(0));
-        let current = generation.clone();
-        std::thread::spawn(move || {
-            while let Ok((mut id, mut request)) = jobs.recv() {
-                // Coalesce queued selections; a cancelled load cannot win a later request.
-                while let Ok((next_id, next_request)) = jobs.try_recv() {
-                    id = next_id;
-                    request = next_request;
-                }
-                if current.load(Ordering::Acquire) != id {
-                    continue;
-                }
-                let send = |stage, fraction| {
-                    if current.load(Ordering::Acquire) != id {
-                        return false;
+        #[cfg(not(target_arch = "wasm32"))]
+        let requests = {
+            let (requests, jobs) = mpsc::channel::<(u64, LoadRequest<C>)>();
+
+            let current = generation.clone();
+            std::thread::spawn(move || {
+                while let Ok((mut id, mut request)) = jobs.recv() {
+                    // Coalesce queued selections; a cancelled load cannot win a later request.
+                    while let Ok((next_id, next_request)) = jobs.try_recv() {
+                        id = next_id;
+                        request = next_request;
                     }
-                    events
-                        .send(Event::Progress(id, LoadProgress { stage, fraction }))
-                        .is_ok()
-                };
-                let result = prepare(&assets, request, &send);
-                if current.load(Ordering::Acquire) == id
-                    && events.send(Event::Complete(id, Box::new(result))).is_err()
-                {
-                    break;
+                    if current.load(Ordering::Acquire) != id {
+                        continue;
+                    }
+                    let send = |stage, fraction| {
+                        if current.load(Ordering::Acquire) != id {
+                            return false;
+                        }
+                        events
+                            .send(Event::Progress(id, LoadProgress { stage, fraction }))
+                            .is_ok()
+                    };
+                    let result = prepare(&assets, request, None, &send);
+                    if current.load(Ordering::Acquire) == id
+                        && events.send(Event::Complete(id, Box::new(result))).is_err()
+                    {
+                        break;
+                    }
                 }
-            }
-        });
+            });
+            requests
+        };
         Self {
+            #[cfg(not(target_arch = "wasm32"))]
             requests,
+            #[cfg(target_arch = "wasm32")]
+            browser: (assets, events),
             events: receiver,
             generation,
             active: None,
@@ -121,6 +132,34 @@ impl<C: Send + 'static> SongAssetLoader<C> {
             stage: LoadStage::Chart,
             fraction: 0.,
         };
+        #[cfg(target_arch = "wasm32")]
+        {
+            let (assets, events) = self.browser.clone();
+            let current = self.generation.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let send = |stage, fraction| {
+                    current.load(Ordering::Acquire) == id
+                        && events
+                            .send(Event::Progress(id, LoadProgress { stage, fraction }))
+                            .is_ok()
+                };
+                let result = async {
+                    crate::browser::fetch(&request.pattern).await?;
+                    if let Some(path) = &request.dance {
+                        crate::browser::fetch_dance(path).await?;
+                    }
+                    ensure!(send(LoadStage::Audio, 0.1), "Loading cancelled");
+                    let decoded = crate::browser::audio(&request.audio).await?;
+                    prepare(&assets, request, Some(decoded), &send)
+                }
+                .await;
+                if current.load(Ordering::Acquire) == id {
+                    let _ = events.send(Event::Complete(id, Box::new(result)));
+                }
+            });
+            Ok(())
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         self.requests
             .send((id, request))
             .map_err(|_| anyhow::anyhow!("Song loader is unavailable"))
@@ -167,6 +206,7 @@ impl<C: Send + 'static> Drop for SongAssetLoader<C> {
 fn prepare<C>(
     assets: &AssetLoader,
     request: LoadRequest<C>,
+    decoded: Option<DecodedSong>,
     progress: &impl Fn(LoadStage, f32) -> bool,
 ) -> Result<PreparedSong<C>> {
     ensure!(progress(LoadStage::Chart, 0.), "Loading cancelled");
@@ -185,13 +225,16 @@ fn prepare<C>(
         );
     }
     ensure!(progress(LoadStage::Audio, 0.1), "Loading cancelled");
-    let audio = assets
-        .request(request::Audio {
-            id: &request.audio,
-            expected_seconds: request.duration,
-            progress: &mut |fraction| progress(LoadStage::Audio, 0.1 + fraction * 0.75),
-        })
-        .context("Could not decode the song audio")?;
+    let audio = match decoded {
+        Some(song) => song,
+        None => assets
+            .request(request::Audio {
+                id: &request.audio,
+                expected_seconds: request.duration,
+                progress: &mut |fraction| progress(LoadStage::Audio, 0.1 + fraction * 0.75),
+            })
+            .context("Could not decode the song audio")?,
+    };
     let audio_sha256 = request.verify_audio.then(|| audio.sha256());
     ensure!(progress(LoadStage::Dance, 0.85), "Loading cancelled");
     let mut reaction_errors = Vec::new();

@@ -7,18 +7,15 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-getrandom = "0.3.4"
+
 sha2.workspace = true
 sdo-net.workspace = true
+sdo-platform.workspace = true
 sdo-gameplay.workspace = true
 sdo-song = {workspace=true, features=["catalog"]}
 
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
-tokio = { version = "1", features = ["rt", "net", "sync"] }
-sdo-assets.workspace = true
-sdo-dance.workspace = true
-serde_json.workspace = true
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = "0.3.4"
 
-[[bin]]
-name = "sdo-server"
-path = "src/main.rs"
+[dev-dependencies]
+serde_json.workspace = true

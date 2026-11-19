@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+sdo-platform.workspace = true
 sdo-gameplay.workspace = true
 anyhow.workspace = true
 serde.workspace = true

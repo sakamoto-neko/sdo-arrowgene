@@ -263,12 +263,13 @@ impl StageRenderer {
                 view_formats: views,
             })
         };
+        let format = super::preview_format(device);
         let heads = target(
-            wgpu::TextureFormat::Rgba8UnormSrgb,
+            format,
             wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_SRC,
-            &[wgpu::TextureFormat::Rgba8Unorm],
+            super::preview_view_formats(format),
         );
         let head_view = heads.create_view(&Default::default());
         let head_ui_view = heads.create_view(&wgpu::TextureViewDescriptor {

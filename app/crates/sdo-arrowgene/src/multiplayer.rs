@@ -6,8 +6,10 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use sdo_asset_loader::PreparedSong;
 use sdo_gameplay::input::Transition;
+#[cfg(not(target_arch = "wasm32"))]
 use sdo_multiplayer::Server;
-use sdo_net::{ChartSpec, Client, ClientEvent, Command, Event};
+use sdo_net::{ChartSpec, Command, Event};
+use sdo_platform::net::{Client, ClientEvent};
 use sdo_ui::LobbyAction;
 #[derive(Clone)]
 pub(crate) enum LoadPurpose {
@@ -18,11 +20,12 @@ pub(crate) enum LoadPurpose {
 pub(crate) struct Online {
     pub round_room: Option<sdo_net::Room>,
     pub round_elapsed: f64,
-    pub deadline: Option<std::time::Instant>,
+    pub deadline: Option<sdo_platform::Instant>,
     pub confirmed: Vec<sdo_ui::notes::ServerGrade>,
     pub judgment_revision: u64,
     pub correction: Option<sdo_gameplay::JudgmentEvent>,
     pub client: Option<Client>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub server: Option<Server>,
     pub prepared: Option<(ChartSpec, PlaySession)>,
     pub round: Option<(u64, u64)>,
@@ -77,7 +80,10 @@ impl App {
             }
             LobbyAction::Exit => {
                 self.disconnect_online();
-                self.online.server = None;
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    self.online.server = None;
+                }
                 self.selector.lobby.hosting = None;
                 self.selector.lobby.open = false;
                 self.selector.lobby.server_menu = sdo_ui::ServerMenu::Choose;
@@ -105,6 +111,9 @@ impl App {
                 self.selector.lobby.connecting = true;
                 self.selector.lobby.status = "Connecting…".into();
             }
+            #[cfg(target_arch = "wasm32")]
+            LobbyAction::Host => anyhow::bail!("Hosting requires the dedicated server"),
+            #[cfg(not(target_arch = "wasm32"))]
             LobbyAction::Host => {
                 ensure!(
                     self.selector.lobby.valid_room_name(),
@@ -136,9 +145,15 @@ impl App {
             }
             LobbyAction::StopHosting => {
                 self.disconnect_online();
-                self.online.server = None;
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    self.online.server = None;
+                }
                 self.selector.lobby.hosting = None;
             }
+            #[cfg(target_arch = "wasm32")]
+            LobbyAction::Create => anyhow::bail!("Join an existing room"),
+            #[cfg(not(target_arch = "wasm32"))]
             LobbyAction::Create => {
                 self.selector.lobby.standings.clear();
                 ensure!(
@@ -535,7 +550,7 @@ impl App {
     /// Negative calibration can put the first note in the end of the countdown.
     /// Use the shared clock for that short pre-roll, then the audio output clock.
     pub(crate) fn advance_playback(&mut self) -> Result<()> {
-        self.advance_playback_at(std::time::Instant::now())
+        self.advance_playback_at(sdo_platform::Instant::now())
             .map(|_| ())
     }
     fn locked_offset(&self) -> i64 {
@@ -548,7 +563,7 @@ impl App {
     }
     pub(crate) fn advance_playback_at(
         &mut self,
-        captured: std::time::Instant,
+        captured: sdo_platform::Instant,
     ) -> Result<Option<sdo_net::SongTime>> {
         if self.online_running() && self.selector.lobby.results {
             return Ok(None);
@@ -714,6 +729,8 @@ impl App {
                 view.private_server = private_server;
                 view.status = if private_server {
                     "Connected to a private server. Joining its room…"
+                } else if cfg!(target_arch = "wasm32") {
+                    "Connected. Join a room."
                 } else {
                     "Connected. Create or join a room."
                 }
@@ -781,7 +798,7 @@ impl App {
                             {
                                 walk.observe(
                                     member,
-                                    std::time::Instant::now(),
+                                    sdo_platform::Instant::now(),
                                     self.online.client.as_ref().and_then(Client::server_us),
                                 );
                             }
@@ -843,7 +860,7 @@ impl App {
                             .or_default()
                             .push(member);
                         if Some(member.id) == self.selector.lobby.player {
-                            let now = std::time::Instant::now();
+                            let now = sdo_platform::Instant::now();
                             self.online
                                 .local_walk
                                 .get_or_insert_with(|| crate::scene::LocalWalk::new(member, now))
@@ -1229,7 +1246,7 @@ impl App {
             if let Some(walk) = &mut self.online.local_walk {
                 walk.turn(
                     direction,
-                    std::time::Instant::now(),
+                    sdo_platform::Instant::now(),
                     self.online.client.as_ref().and_then(Client::server_us),
                 );
             }
@@ -1296,7 +1313,7 @@ impl App {
             .unwrap_or(0.)
     }
     pub(crate) fn window_focus(&mut self, focused: bool) -> Result<()> {
-        let captured = std::time::Instant::now();
+        let captured = sdo_platform::Instant::now();
         self.focused = focused;
         if !focused {
             self.selector.lobby.stop_walking();
@@ -1412,7 +1429,7 @@ mod tests {
         app.selector.lobby.room_name = "Portrait room".into();
         app.selector.lobby.preferences.listen = "127.0.0.1:0".into();
         app.lobby_action(&LobbyAction::Host)?;
-        let began = std::time::Instant::now();
+        let began = sdo_platform::Instant::now();
         while app.selector.lobby.room().is_none() {
             app.poll_multiplayer();
             ensure!(
@@ -1447,7 +1464,7 @@ mod tests {
             guest: &mut App,
             predicate: impl Fn(&App, &App) -> bool,
         ) -> Result<()> {
-            let began = std::time::Instant::now();
+            let began = sdo_platform::Instant::now();
             while !predicate(host, guest) {
                 host.poll_multiplayer();
                 guest.poll_multiplayer();

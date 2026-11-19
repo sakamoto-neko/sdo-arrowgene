@@ -2,15 +2,16 @@
 use crate::{app::App, wardrobe::WardrobeThumbnails};
 use anyhow::Result;
 use sdo_asset_loader::{
-    AssetLoader, PreviewPlayer, SongAssetLoader, request as asset,
-    sources::{self, SourceReport},
+    AssetLoader, PreviewPlayer, SongAssetLoader, request as asset, sources::SourceReport,
 };
 use sdo_assets::UiSelection;
 pub(crate) type SourceLoadResult = Result<(AssetLoader, Vec<SourceReport>)>;
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) enum SourceEvent {
     Complete(Box<SourceLoadResult>),
 }
 impl App {
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn browse_assets(&mut self) {
         if self.source_reload.is_some() {
             return;
@@ -37,6 +38,7 @@ impl App {
             }
         }
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn reload_sources(&mut self) {
         if self.source_reload.is_some() {
             return;
@@ -59,9 +61,21 @@ impl App {
         }
         .into();
         std::thread::spawn(move || {
-            let result = sources::initial_load(&settings);
+            let result = sdo_asset_loader::sources::initial_load(&settings);
             let _ = send.send(SourceEvent::Complete(Box::new(result)));
         });
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn browse_assets(&mut self) {
+        if let Some(window) = web_sys::window() {
+            let _ = window.location().set_search("?choose");
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn reload_sources(&mut self) {
+        if let Some(window) = web_sys::window() {
+            let _ = window.location().reload();
+        }
     }
     pub(crate) fn poll_sources(&mut self) {
         let Some(receiver) = &self.source_reload else {

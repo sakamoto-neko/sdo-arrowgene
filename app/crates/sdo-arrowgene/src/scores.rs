@@ -1,11 +1,8 @@
 use anyhow::{Context, Result};
 use sdo_config::{ScoreBook, ScoreKey, ScoreRecord};
 use sdo_gameplay::Practice;
-use std::{
-    path::PathBuf,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use sdo_platform::{SystemTime, UNIX_EPOCH};
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Default)]
 pub struct ScoreStore {

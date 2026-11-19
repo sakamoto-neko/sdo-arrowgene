@@ -5,7 +5,8 @@ use sdo_asset_loader::{AssetLoader, curated::CuratedProvider, request as asset};
 use sdo_assets::curated::CollectionPaths;
 use sdo_gameplay::{Lane, Note, Practice, input::InputState};
 use sdo_multiplayer::Server;
-use sdo_net::{ChartSpec, Client, ClientEvent, Command, Event, SongTime};
+use sdo_net::{ChartSpec, Command, Event, SongTime};
+use sdo_platform::net::{Client, ClientEvent};
 use sdo_render::{
     Renderer, Sprite,
     character::{

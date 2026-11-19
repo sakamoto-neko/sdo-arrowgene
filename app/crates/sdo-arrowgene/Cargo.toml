@@ -10,6 +10,7 @@ glam.workspace = true
 sha2.workspace = true
 sdo-multiplayer.workspace = true
 sdo-net.workspace = true
+sdo-platform.workspace = true
 sdo-asset-loader.workspace = true
 sdo-dance.workspace = true
 anyhow.workspace = true
@@ -25,7 +26,17 @@ sdo-song = {workspace=true, features=["catalog"]}
 serde.workspace = true
 serde_json.workspace = true
 sdo-ui.workspace = true
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = {version="0.3",features=["HtmlCanvasElement","Document","Location","Window","console"]}
+wgpu = {workspace=true, features=["webgl"]}
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rfd = "0.15.4"
+
+[lib]
+crate-type = ["cdylib","rlib"]
 
 [dev-dependencies]
 image.workspace = true

@@ -1,25 +1,6 @@
-//! Desktop composition root. Content providers never depend on this binary.
-mod app;
-mod cli;
-mod diagnostics;
-mod launch;
-mod multiplayer;
-#[cfg(test)]
-mod room;
-mod scene;
-mod scores;
-mod session;
-mod settings;
-mod sources;
-mod wardrobe;
-
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> anyhow::Result<()> {
-    launch::run()
+    sdo_arrowgene::run()
 }
-
-#[cfg(test)]
-#[path = "tests/collection.rs"]
-mod integration_tests;
-#[cfg(test)]
-#[path = "tests/multiplayer_scene.rs"]
-mod multiplayer_scene_tests;
+#[cfg(target_arch = "wasm32")]
+fn main() {}

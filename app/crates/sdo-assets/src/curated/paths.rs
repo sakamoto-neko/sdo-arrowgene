@@ -1,5 +1,6 @@
 //! Curated filesystem locations and checked native relative references.
 use anyhow::{Context, Result, bail};
+use sdo_platform::assets as fs;
 use std::{
     env,
     path::{Component, Path, PathBuf},
@@ -19,7 +20,7 @@ impl CollectionPaths {
     }
     pub fn new(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
-        let root = root.canonicalize().with_context(|| {
+        let root = fs::canonicalize(&root).with_context(|| {
             format!(
                 "Cannot open the SDO collection directory {}",
                 root.display()
@@ -35,11 +36,9 @@ impl CollectionPaths {
     }
     /// Open the Custom Assets directory itself, independent of its parent name.
     pub fn from_assets(assets: impl Into<PathBuf>) -> Result<Self> {
-        let assets = assets
-            .into()
-            .canonicalize()
+        let assets = fs::canonicalize(Into::<PathBuf>::into(assets))
             .context("Cannot open Custom Assets folder")?;
-        if !assets.is_dir() {
+        if !fs::is_dir(&assets) {
             bail!("Custom Assets path must be a directory");
         }
         let root = assets.parent().unwrap_or(&assets).to_owned();

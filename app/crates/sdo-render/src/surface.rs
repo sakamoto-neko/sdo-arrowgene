@@ -20,7 +20,10 @@ impl DisplaySurface {
         size: [u32; 2],
         frame_latency: u32,
     ) -> Result<(Self, wgpu::Device, wgpu::Queue, String)> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let instance = wgpu::util::new_instance_with_webgpu_detection(
+            wgpu::InstanceDescriptor::new_without_display_handle(),
+        )
+        .await;
         let surface = instance.create_surface(target)?;
         let (adapter, device, queue, name) =
             crate::request_device(&instance, Some(&surface)).await?;

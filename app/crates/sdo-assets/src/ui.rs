@@ -5,10 +5,10 @@ use crate::{
     resolve_resource, score::ScoreDefinition,
 };
 use anyhow::{Context, Result, ensure};
+use sdo_platform::assets as fs;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -225,7 +225,7 @@ fn discover(base: &Path, entry: &str, issues: &mut Vec<AssetIssue>, kind: &str) 
                 .to_string_lossy()
                 .eq_ignore_ascii_case(entry)
             {
-                out.push(child.path().canonicalize()?);
+                out.push(fs::canonicalize(child.path())?);
             }
         }
         Ok(())
@@ -260,7 +260,7 @@ impl UiAssets {
         Self::load_components(root, true)
     }
     fn load_components(root: &Path, defaults_only: bool) -> Result<Self> {
-        let root = root.canonicalize().context("Cannot open assets/ui")?;
+        let root = fs::canonicalize(root).context("Cannot open assets/ui")?;
         let mut loader = TextureStore::from_root(&root)?;
         let font = loader.utility_font();
         let mut issues = Vec::new();
@@ -473,7 +473,7 @@ impl UiAssets {
                 })
             }
         );
-        if root.join("health").exists() {
+        if fs::exists(root.join("health")) {
             load_components!(
                 "health",
                 "health.json",
@@ -663,6 +663,7 @@ impl UiAssets {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
     struct Fixture(PathBuf);

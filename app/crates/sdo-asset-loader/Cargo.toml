@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+sdo-platform.workspace = true
 anyhow.workspace = true
 sdo-assets.workspace = true
 sdo-audio.workspace = true
@@ -16,6 +17,10 @@ serde_json.workspace = true
 font8x8 = "0.3.1"
 
 sha2.workspace = true
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 directories = "6"
 tempfile = "3.27"

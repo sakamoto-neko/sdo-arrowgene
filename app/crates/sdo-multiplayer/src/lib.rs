@@ -3,10 +3,13 @@ use anyhow::{Result, ensure};
 use sdo_gameplay::Practice;
 use sdo_net::*;
 use sdo_song::{Chart, Difficulty};
+#[cfg(not(target_arch = "wasm32"))]
 mod password;
 mod referee;
+#[cfg(not(target_arch = "wasm32"))]
 mod server;
 pub use referee::Referee as Replay;
+#[cfg(not(target_arch = "wasm32"))]
 pub use server::Server;
 pub fn prepare_chart(spec: &ChartSpec, raw: Vec<u8>) -> Result<Practice> {
     spec.validate()?;

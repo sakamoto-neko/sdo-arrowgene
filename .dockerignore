@@ -4,3 +4,6 @@
 !app/Cargo.lock
 !app/crates/
 !app/crates/**
+
+!web/
+!web/**

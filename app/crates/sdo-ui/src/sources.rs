@@ -42,6 +42,20 @@ impl SongSelector {
         action
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn asset_folder(&mut self, ui: &mut egui::Ui) -> Action {
+        ui.heading("Asset server");
+        if let Some(url) = &self.remote_override {
+            ui.label(url);
+        }
+        if ui.button("Change asset server").clicked() {
+            Action::BrowseAssets
+        } else {
+            Action::None
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn asset_folder(&mut self, ui: &mut egui::Ui) -> Action {
         let mut action = Action::None;
         ui.set_width(ui.available_width());

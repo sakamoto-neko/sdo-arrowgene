@@ -25,6 +25,30 @@ Open **Single Player**, choose a song and difficulty, and press <kbd>Enter</kbd>
 | :---: | :---: |
 | ![Four-key gameplay during Holy Knight](docs/screenshots/gameplay.png) | ![A dancer previewing hairstyles in the wardrobe](docs/screenshots/wardrobe.png) |
 
+## Browser player
+
+Run the dedicated server with both options to play from its asset collection.
+
+```sh
+sdo-server --web --assets ./assets
+```
+
+Open `http://localhost:32101/play/` on the server machine, or substitute its hostname from another device. Select a four-key track and difficulty to play solo. The browser runs the Rust client used on desktop, including the 3D dancer and wardrobe. To play online, select **Multiplayer → Join Server**, connect, join an existing room, then choose **Ready**. The host selects the chart and starts the round.
+
+| Option | What it serves |
+| --- | --- |
+| `--web` | The built-in player at `/play/` and its WebSocket at `/play/ws`. Players can enter a separate asset server URL. |
+| `--assets DIRECTORY` | The song and character manifests and their content-addressed files over HTTP. Combine with `--web` to load this collection automatically. |
+| `--asset-listen HOST:PORT` | The shared HTTP listener, default `0.0.0.0:32101`. Native clients use the separate game TCP listener on port `32100`. |
+
+For Docker, publish `32101/tcp`, mount the collection read-only, and pass the options after the image name. Also publish `32100/tcp` for desktop players.
+
+### Reverse proxy
+
+For a public URL such as `https://arrowgene.com/subdir/play/`, forward `/subdir/` to the server's HTTP listener, stripping `/subdir/` and forwarding WebSocket upgrades. The browser resolves the client, local assets, and room socket relative to the player URL. HTTP uses `ws://` and HTTPS uses `wss://`. The upstream connection can use HTTP in both cases. When exposing the player directly at `/subdir/`, map that prefix to the upstream `/play/` directory and redirect `/subdir` to `/subdir/`.
+
+The browser bundle is embedded in the server binary. To rebuild it after changing the client, platform adapters, or decoding worker, install the `wasm32-unknown-unknown` Rust target and `wasm-bindgen-cli` 0.2.130, run `sh web/build.sh`, then rebuild `sdo-server`.
+
 ## Multiplayer
 
 - **Host a room** from the client under **Multiplayer → Host Server**.

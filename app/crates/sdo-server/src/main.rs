@@ -1,4 +1,5 @@
 mod asset_http;
+mod browser;
 
 use anyhow::{Context, Result, bail, ensure};
 use std::path::PathBuf;
@@ -8,8 +9,10 @@ fn main() -> Result<()> {
     let mut game = None;
     let mut assets = None;
     let mut http = None;
+    let mut web = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--web" => web = true,
             "--assets" => {
                 assets = Some(PathBuf::from(
                     args.next().context("--assets needs a directory")?,
@@ -20,7 +23,7 @@ fn main() -> Result<()> {
             }
             "-h" | "--help" => {
                 println!(
-                    "sdo-server [GAME_ADDRESS] [--assets DIRECTORY] [--asset-listen ADDRESS]\nGame TCP defaults to 0.0.0.0:32100. Optional asset HTTP defaults to 0.0.0.0:32101."
+                    "sdo-server [GAME_ADDRESS] [--assets DIRECTORY] [--web] [--asset-listen ADDRESS]\nGame TCP defaults to 0.0.0.0:32100. Optional web player (/play/) and asset HTTP listener defaults to 0.0.0.0:32101."
                 );
                 return Ok(());
             }
@@ -30,18 +33,23 @@ fn main() -> Result<()> {
         }
     }
     ensure!(
-        assets.is_some() || http.is_none(),
-        "--asset-listen requires --assets"
+        assets.is_some() || web || http.is_none(),
+        "--asset-listen requires --assets or --web"
     );
     let game = game.as_deref().unwrap_or("0.0.0.0:32100");
-    if let Some(root) = assets {
+    if assets.is_some() || web {
         let lobby = sdo_multiplayer::Server::bind(game)?;
         println!(
-            "SDO dedicated server listening on {} (protocol {}, multiple rooms); indexing assets",
+            "SDO dedicated server listening on {} (protocol {}, multiple rooms)",
             lobby.address,
             sdo_net::PROTOCOL
         );
-        asset_http::serve(&root, http.as_deref().unwrap_or("0.0.0.0:32101"))
+        asset_http::serve(
+            assets.as_deref(),
+            http.as_deref().unwrap_or("0.0.0.0:32101"),
+            lobby.address,
+            web,
+        )
     } else {
         sdo_multiplayer::Server::run(game)
     }

@@ -1,9 +1,9 @@
 use crate::{Texture, TextureId};
 use anyhow::{Context, Result, ensure};
+use sdo_platform::assets as fs;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeSet, HashMap},
-    fs,
     path::PathBuf,
 };
 pub(crate) struct TextureStore {
@@ -15,11 +15,9 @@ pub(crate) struct TextureStore {
 }
 impl TextureStore {
     pub(crate) fn from_root(root: impl Into<PathBuf>) -> Result<Self> {
-        let root = root
-            .into()
-            .canonicalize()
+        let root = fs::canonicalize(Into::<PathBuf>::into(root))
             .context("Cannot open UI asset directory")?;
-        ensure!(root.is_dir(), "UI root is not a directory");
+        ensure!(fs::is_dir(&root), "UI root is not a directory");
         Ok(Self {
             root,
             textures: vec![Texture {

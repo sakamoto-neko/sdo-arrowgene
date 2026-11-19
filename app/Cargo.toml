@@ -18,6 +18,7 @@ sdo-config = { path = "crates/sdo-config" }
 sdo-dance = { path = "crates/sdo-dance" }
 sdo-gameplay = { path = "crates/sdo-gameplay" }
 sdo-multiplayer = { path = "crates/sdo-multiplayer" }
+sdo-platform = { path = "crates/sdo-platform" }
 sdo-net = { path = "crates/sdo-net" }
 sdo-render = { path = "crates/sdo-render" }
 sdo-song = { path = "crates/sdo-song", default-features = false }
@@ -28,7 +29,7 @@ anyhow = "1.0.104"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 egui = { version = "0.37.0", features = ["default_fonts"] }
 egui-wgpu = { version = "0.37.0", default-features = false }
-egui-winit = { version = "0.37.0", default-features = false, features = ["clipboard"] }
+egui-winit = { version = "0.37.0", default-features = false }
 glam = "0.33.12"
 flate2 = "1.1.11"
 base64 = "0.22.1"

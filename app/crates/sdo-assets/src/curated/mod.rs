@@ -1,13 +1,11 @@
 //! Filesystem helpers for the curated provider. Frontends use sdo-asset-loader.
+use sdo_platform::assets as fs;
 mod paths;
 pub(crate) mod textures;
 use crate::{CharacterAssets, ClothingPreviewKey, OutfitOverrides, UiAssets};
 use anyhow::{Context, Result, bail, ensure};
 pub use paths::{CollectionPaths, DATA_ENV, resource_path};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 pub fn ui(paths: &CollectionPaths) -> Result<UiAssets> {
     UiAssets::load(paths)
@@ -28,16 +26,16 @@ pub fn clothing_preview(
 /// Reproduces Windows case-insensitive lookup on case-sensitive filesystems, too.
 pub fn resolve_resource(root: &Path, logical: &str) -> Result<PathBuf> {
     let relative = resource_path(logical)?;
-    let root = root.canonicalize().context("Cannot open resource root")?;
+    let root = fs::canonicalize(root).context("Cannot open resource root")?;
     let exact = root.join(&relative);
-    let found = if exact.is_file() {
+    let found = if fs::is_file(&exact) {
         exact
     } else {
         let mut cursor = root.clone();
         for part in relative.components() {
             let part = part.as_os_str();
             let direct = cursor.join(part);
-            if direct.exists() {
+            if fs::exists(&direct) {
                 cursor = direct;
                 continue;
             }
@@ -61,9 +59,9 @@ pub fn resolve_resource(root: &Path, logical: &str) -> Result<PathBuf> {
         }
         cursor
     };
-    let found = found.canonicalize()?;
+    let found = fs::canonicalize(&found)?;
     ensure!(
-        found.starts_with(&root) && found.is_file(),
+        found.starts_with(&root) && fs::is_file(&found),
         "Resource escapes its component directory"
     );
     Ok(found)
@@ -72,6 +70,7 @@ pub fn resolve_resource(root: &Path, logical: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     #[test]
     fn case_insensitive_lookup_and_symlink_containment() {
         let root = std::env::temp_dir().join(format!("sdo-assets-test-{}", std::process::id()));

@@ -1,15 +1,19 @@
 //! Background preview decoding. Request generations prevent stale songs from playing.
-use crate::{AssetLoader, request};
+use crate::AssetLoader;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::request;
 use sdo_audio::{AudioPlayer, DecodedSong};
+use sdo_platform::Instant;
 use std::{
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 struct Request {
     generation: u64,
     id: String,
@@ -20,7 +24,10 @@ struct Completion {
 }
 
 pub struct PreviewPlayer {
+    #[cfg(not(target_arch = "wasm32"))]
     requests: mpsc::Sender<Request>,
+    #[cfg(target_arch = "wasm32")]
+    results: mpsc::Sender<Completion>,
     completed: mpsc::Receiver<Completion>,
     generation: u64,
     current: Arc<AtomicU64>,
@@ -31,10 +38,15 @@ pub struct PreviewPlayer {
 }
 impl PreviewPlayer {
     pub fn new(assets: AssetLoader) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
         let (requests, rx) = mpsc::channel::<Request>();
+        #[cfg(target_arch = "wasm32")]
+        let _ = assets;
         let (tx, completed) = mpsc::channel();
         let current = Arc::new(AtomicU64::new(0));
+        #[cfg(not(target_arch = "wasm32"))]
         let active = current.clone();
+        #[cfg(not(target_arch = "wasm32"))]
         std::thread::spawn(move || {
             while let Ok(mut request) = rx.recv() {
                 // Rapid navigation decodes the newest queued request first.
@@ -58,7 +70,10 @@ impl PreviewPlayer {
             }
         });
         Self {
+            #[cfg(not(target_arch = "wasm32"))]
             requests,
+            #[cfg(target_arch = "wasm32")]
+            results: tx,
             completed,
             generation: 0,
             current,
@@ -101,6 +116,17 @@ impl PreviewPlayer {
                 .is_some_and(|(_, since)| since.elapsed() >= Duration::from_millis(120))
         {
             let (id, _) = self.pending.take().unwrap();
+            #[cfg(target_arch = "wasm32")]
+            {
+                let tx = self.results.clone();
+                let generation = self.generation;
+                self.in_flight = Some(generation);
+                wasm_bindgen_futures::spawn_local(async move {
+                    let result = crate::browser::audio(&id).await;
+                    let _ = tx.send(Completion { generation, result });
+                });
+            }
+            #[cfg(not(target_arch = "wasm32"))]
             if self
                 .requests
                 .send(Request {
