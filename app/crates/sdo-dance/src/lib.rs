@@ -135,6 +135,73 @@ impl DanceLibrary {
         let word = |at| u32::from_le_bytes(gn[at..at + 4].try_into().unwrap());
         let measures = word(52 + 4 * difficulty);
         let seconds = word(272 + 4 * difficulty);
+        let script = DanceScript::parse(raw)?;
+        let divisions = script.divisions;
+        ensure!(
+            divisions > 0 && measures > 0 && seconds > 0,
+            "Zero GN/DPS dance timing divisor"
+        );
+        let unit_ms =
+            (u64::from(seconds) * 1000 / (u64::from(measures) * u64::from(divisions))) as u32;
+        ensure!(unit_ms > 0, "DPS unit is shorter than one millisecond");
+        let mut issues = BTreeSet::new();
+        let mut groups = Vec::new();
+        let mut units = 0u64;
+        let mut stage_transforms = 0;
+        for (length, mut clips) in script.groups {
+            for clip in &mut clips {
+                let name = &clip.name;
+                let (first, last) = (clip.first, clip.last);
+                if clip.translation != [0.; 3] || clip.rotation != 0. || clip.vector != [0.; 3] {
+                    stage_transforms += 1;
+                }
+                clip.motion = match self.motion(name) {
+                    // A client without a dancer still verifies the authored clips for a room.
+                    Ok(m) if bones != 0 && !m.supports_bones(bones) => {
+                        issues.insert(format!("{name}: {}-bone motion is incompatible with the {bones}-bone character",m.bone_count()));
+                        None
+                    }
+                    Ok(m) if first > m.last_frame + 1. || last > m.last_frame + 1. => {
+                        issues.insert(format!(
+                            "{name}: DPS frames {first}..{last} exceed MOT end {}",
+                            m.last_frame
+                        ));
+                        None
+                    }
+                    Ok(m) => Some(m),
+                    Err(e) => {
+                        issues.insert(format!("{e:#}"));
+                        None
+                    }
+                };
+            }
+            groups.push(DanceGroup {
+                start: units as f64 * unit_ms as f64 / 1000.,
+                seconds: length as f64 * unit_ms as f64 / 1000.,
+                clips,
+            });
+            units += u64::from(length);
+        }
+        Ok(SongDance {
+            groups,
+            unit_ms,
+            issues: issues.into_iter().collect(),
+            stage_transforms,
+        })
+    }
+}
+/// Parsed choreography, before GN timing and character-specific motion resolution.
+pub struct DanceScript {
+    divisions: u32,
+    groups: Vec<(u32, Vec<DanceClip>)>,
+}
+impl DanceScript {
+    pub fn motion_names(&self) -> impl Iterator<Item = &str> {
+        self.groups
+            .iter()
+            .flat_map(|(_, clips)| clips.iter().map(|clip| clip.name.as_str()))
+    }
+    pub fn parse(raw: &[u8]) -> Result<Self> {
         let mut r = Reader { raw, at: 0 };
         let signature = r.take(8)?;
         ensure!(
@@ -143,20 +210,10 @@ impl DanceLibrary {
         );
         let stride = if signature == b"PAS00003" { 305 } else { 304 };
         let divisions = r.u32()?;
-        ensure!(
-            divisions > 0 && measures > 0 && seconds > 0,
-            "Zero GN/DPS dance timing divisor"
-        );
-        let unit_ms =
-            (u64::from(seconds) * 1000 / (u64::from(measures) * u64::from(divisions))) as u32;
-        ensure!(unit_ms > 0, "DPS unit is shorter than one millisecond");
         r.take(260)?;
         let count = r.u32()? as usize;
         ensure!(count <= raw.len() / 12, "Invalid DPS group count");
-        let mut units = 0u64;
         let mut groups = Vec::new();
-        let mut issues = BTreeSet::new();
-        let mut stage_transforms = 0;
         for _ in 0..count {
             let _authored_start = r.u32()?;
             let length = r.u32()?;
@@ -179,27 +236,6 @@ impl DanceLibrary {
                 r.u32()?;
                 let vector = [r.float()?, r.float()?, r.float()?];
                 let flag = if stride == 305 { r.take(1)?[0] } else { 0 };
-                if translation != [0.; 3] || rotation != 0. || vector != [0.; 3] {
-                    stage_transforms += 1;
-                }
-                let motion = match self.motion(&name) {
-                    Ok(m) if !m.supports_bones(bones) => {
-                        issues.insert(format!("{name}: {}-bone motion is incompatible with the {bones}-bone character",m.bone_count()));
-                        None
-                    }
-                    Ok(m) if first > m.last_frame + 1. || last > m.last_frame + 1. => {
-                        issues.insert(format!(
-                            "{name}: DPS frames {first}..{last} exceed MOT end {}",
-                            m.last_frame
-                        ));
-                        None
-                    }
-                    Ok(m) => Some(m),
-                    Err(e) => {
-                        issues.insert(format!("{e:#}"));
-                        None
-                    }
-                };
                 clips.push(DanceClip {
                     name,
                     first,
@@ -209,24 +245,14 @@ impl DanceLibrary {
                     rotation,
                     vector,
                     flag,
-                    motion,
+                    motion: None,
                 });
             }
-            groups.push(DanceGroup {
-                start: units as f64 * unit_ms as f64 / 1000.,
-                seconds: length as f64 * unit_ms as f64 / 1000.,
-                clips,
-            });
-            units += u64::from(length);
+            groups.push((length, clips));
         }
         ensure!(r.at == raw.len(), "Trailing DPS bytes");
         ensure!(!groups.is_empty(), "DPS has no groups");
-        Ok(SongDance {
-            groups,
-            unit_ms,
-            issues: issues.into_iter().collect(),
-            stage_transforms,
-        })
+        Ok(Self { divisions, groups })
     }
 }
 impl SongDance {

@@ -9,6 +9,8 @@ use std::{collections::HashSet, path::PathBuf};
 pub(crate) struct Options {
     pub(crate) specified: HashSet<String>,
     pub(crate) selector: bool,
+    pub(crate) remote_asset_url: Option<String>,
+    pub(crate) initial_load: bool,
     pub(crate) character_view: bool,
     pub(crate) character: Option<String>,
     pub(crate) verify_characters: bool,
@@ -46,6 +48,8 @@ impl Default for Options {
         Self {
             specified: HashSet::new(),
             selector: false,
+            remote_asset_url: None,
+            initial_load: false,
             character_view: false,
             character: None,
             verify_characters: false,
@@ -96,6 +100,8 @@ impl Options {
 
 Options:
   -h, --help            Show this help
+  --remote-asset-url URL  Override the asset endpoint for this launch
+  --initial-load        Verify and fetch the essential remote files
   --selector            Open the song selector (default without --song)
   --character-view      Open the 3D character preview and preset selector
   --character ID        Select a JSON character preset (default male)
@@ -155,6 +161,15 @@ Pad and Keyboard use native tap-window tables. Hold judgments remain approximate
                         "Pad and Keyboard are the two selectable timing presets. Holds still use practice behavior."
                     );
                     return Ok(None);
+                }
+                "--remote-asset-url" => {
+                    out.remote_asset_url =
+                        Some(args.next().context("--remote-asset-url needs a URL")?)
+                }
+                "--initial-load" => out.initial_load = true,
+                _ if arg.starts_with("--remote-asset-url=") => {
+                    out.remote_asset_url =
+                        Some(arg.trim_start_matches("--remote-asset-url=").to_owned())
                 }
                 "--board" => out.board = Some(args.next().context("--board needs an ID")?),
                 "--score-ui" => out.score_ui = Some(args.next().context("--score-ui needs an ID")?),

@@ -254,10 +254,13 @@ impl UiAssets {
     }
     /// This root is the curated UI tree, never a regional/source fallback.
     pub fn load_root(root: impl AsRef<Path>) -> Result<Self> {
-        let root = root
-            .as_ref()
-            .canonicalize()
-            .context("Cannot open assets/ui")?;
+        Self::load_components(root.as_ref(), false)
+    }
+    pub fn distribution_defaults(root: &Path) -> Result<Self> {
+        Self::load_components(root, true)
+    }
+    fn load_components(root: &Path, defaults_only: bool) -> Result<Self> {
+        let root = root.canonicalize().context("Cannot open assets/ui")?;
         let mut loader = TextureStore::from_root(&root)?;
         let font = loader.utility_font();
         let mut issues = Vec::new();
@@ -270,7 +273,17 @@ impl UiAssets {
             ($folder:literal, $entry:literal, $kind:literal, $target:ident, $load:expr) => {{
                 let base = root.join($folder);
                 let mut ids = HashSet::new();
-                for path in discover(&base, $entry, &mut issues, $kind) {
+                let entries = if defaults_only {
+                    let folder = match $folder {
+                        "note/skin" => base.join("classic_1"),
+                        "note/effect" => base.join("sparkle"),
+                        _ => base.clone(),
+                    };
+                    vec![resolve_resource(&folder, $entry)?]
+                } else {
+                    discover(&base, $entry, &mut issues, $kind)
+                };
+                for path in entries {
                     let result: Result<_> = ($load)(&mut loader, &base, &path);
                     match result {
                         Ok(component) if ids.insert(component.choice.id.to_ascii_lowercase()) => {

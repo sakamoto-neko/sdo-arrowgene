@@ -427,8 +427,18 @@ impl crate::app::App {
                 }
             }
         }
-        if self.online.scene_song.as_ref().map(|(spec, _)| spec) != room.chart.as_ref() {
-            self.online.scene_song = room.chart.as_ref().map(|spec| {
+        // Room browsing uses idle/walk. Prepare song choreography only after this
+        // player has committed to the chart, even when another host selects it.
+        let prepared_chart = room.chart.as_ref().filter(|spec| {
+            self.online.round.is_some()
+                || self
+                    .online
+                    .prepared
+                    .as_ref()
+                    .is_some_and(|(ready, _)| ready == *spec)
+        });
+        if self.online.scene_song.as_ref().map(|(spec, _)| spec) != prepared_chart {
+            self.online.scene_song = prepared_chart.map(|spec| {
                 let song = self.selector.catalog.songs.iter().find_map(|song| {
                     song.patterns
                         .iter()
@@ -449,7 +459,7 @@ impl crate::app::App {
             .and_then(|(_, song)| song.as_ref());
         for member in &room.members {
             let local = Some(member.id) == self.selector.lobby.player;
-            if local && self.selector.character.is_empty() {
+            if self.characters.presets.is_empty() || local && self.selector.character.is_empty() {
                 continue;
             }
             let desired = if local {
@@ -502,7 +512,14 @@ impl crate::app::App {
         }
         self.selector.lobby.available_avatars = self.online.actors.keys().copied().collect();
         self.selector.lobby.scene_loading = room.members.iter().any(|m| {
-            !self.online.actors.contains_key(&m.id) || self.online.scene_pending.contains_key(&m.id)
+            let expects_model = if Some(m.id) == self.selector.lobby.player {
+                !self.selector.character.is_empty()
+            } else {
+                !self.characters.presets.is_empty() && self.online.appearances.contains_key(&m.id)
+            };
+            expects_model
+                && (!self.online.actors.contains_key(&m.id)
+                    || self.online.scene_pending.contains_key(&m.id))
         });
         Ok(())
     }

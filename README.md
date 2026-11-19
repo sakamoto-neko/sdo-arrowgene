@@ -11,7 +11,7 @@ SDO Arrowgene aims to faithfully recreate the core rhythm gameplay of the *Super
 | Wardrobe | Customize your dancer’s outfit in the **Character** tab. |
 
 > [!IMPORTANT]
-> **No game assets are included.** Each player needs a compatible SDO asset folder.
+> **No game assets are included.** Each player needs a compatible asset folder.
 
 To get started, download the [client for your platform](https://github.com/sebastian-heinz/sdo-arrowgene/releases/latest), extract it, and open `sdo-arrowgene`. In **Settings → Asset Folder**, select your folder and click **Reload assets**.
 
@@ -30,7 +30,7 @@ Open **Single Player**, choose a song and difficulty, and press <kbd>Enter</kbd>
 - **Host a room** from the client under **Multiplayer → Host Server**.
 - **Join a room** through **Multiplayer → Join Server**. Enter the host’s address, such as `192.168.1.20:32100` on a LAN.
 
-Each player needs the same song and matching chart in their local asset folder.
+Each player needs matching song and chart data. Players using an asset server fetch missing files when they ready up.
 
 ![Two players in a multiplayer room before a song](docs/screenshots/multiplayer-room.png)
 

@@ -67,12 +67,21 @@ impl SongSelector {
                     action = Action::BrowseAssets;
                 }
             });
-            ui.weak("The path is saved automatically. Reload after changing the path or files.");
+            ui.label("Asset server URL");
+            if let Some(url) = &self.remote_override {
+                ui.label(format!("{url} (command-line override)"));
+            } else {
+                ui.text_edit_singleline(&mut self.source_settings.remote_asset_url);
+            }
+            let remote = !self.remote_override.as_deref().unwrap_or(&self.source_settings.remote_asset_url).trim().is_empty();
+            if remote {
+                ui.weak("Check local files and fetch the default interface and song list. Songs load when played.");
+            }
             ui.add_space(6.);
             if ui
                 .add_enabled(
-                    !self.source_settings.path.trim().is_empty(),
-                    egui::Button::new("Reload assets"),
+                    remote || !self.source_settings.path.trim().is_empty() || !self.source_reports.is_empty(),
+                    egui::Button::new(if remote {"Initial load"} else {"Reload assets"}),
                 )
                 .clicked()
             {

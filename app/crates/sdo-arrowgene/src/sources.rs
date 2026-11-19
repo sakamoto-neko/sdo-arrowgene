@@ -23,7 +23,18 @@ impl App {
         }
         if let Some(folder) = dialog.pick_folder() {
             self.selector.source_settings.path = folder.display().to_string();
-            self.reload_sources();
+            if self
+                .selector
+                .remote_override
+                .as_deref()
+                .unwrap_or(&self.selector.source_settings.remote_asset_url)
+                .trim()
+                .is_empty()
+            {
+                self.reload_sources();
+            } else {
+                self.sync_settings(true);
+            }
         }
     }
     pub(crate) fn reload_sources(&mut self) {
@@ -34,13 +45,21 @@ impl App {
         self.cancel_loading();
         self.preview_audio.stop();
         self.preview_id = None;
-        let settings = self.selector.source_settings.clone();
+        let mut settings = self.selector.source_settings.clone();
+        if let Some(url) = &self.selector.remote_override {
+            settings.remote_asset_url.clone_from(url);
+        }
         let (send, receive) = std::sync::mpsc::channel();
         self.source_reload = Some(receive);
         self.selector.sources_loading = true;
-        self.selector.source_status = "Discovering assets…".into();
+        self.selector.source_status = if settings.remote_asset_url.is_empty() {
+            "Discovering assets…"
+        } else {
+            "Checking and loading essential assets…"
+        }
+        .into();
         std::thread::spawn(move || {
-            let result = sources::open(&settings);
+            let result = sources::initial_load(&settings);
             let _ = send.send(SourceEvent::Complete(Box::new(result)));
         });
     }

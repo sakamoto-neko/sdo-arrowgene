@@ -411,6 +411,7 @@ mod tests {
         assert_eq!(settings.scroll_speed.value(), 3);
         settings.asset_paths = Some(sdo_asset_loader::sources::SourceSettings {
             path: "saved/assets".into(),
+            ..Default::default()
         });
         settings.multiplayer.name = "Alice".into();
         settings.multiplayer.address = "rhythm.example:32100".into();

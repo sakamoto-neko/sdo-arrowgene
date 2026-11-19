@@ -16,6 +16,8 @@ use std::{path::Path, sync::Arc};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct SourceSettings {
     pub path: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub remote_asset_url: String,
 }
 impl<'de> Deserialize<'de> for SourceSettings {
     fn deserialize<D: serde::Deserializer<'de>>(
@@ -25,6 +27,7 @@ impl<'de> Deserialize<'de> for SourceSettings {
         #[serde(default)]
         struct Document {
             path: Option<String>,
+            remote_asset_url: String,
             custom_assets: Option<LegacyCustom>,
         }
         #[derive(Deserialize)]
@@ -33,6 +36,7 @@ impl<'de> Deserialize<'de> for SourceSettings {
         }
         let value = Document::deserialize(deserializer)?;
         Ok(Self {
+            remote_asset_url: value.remote_asset_url,
             path: value
                 .path
                 .or_else(|| value.custom_assets.map(|c| c.path))
@@ -62,6 +66,18 @@ struct Sources {
     ui: Arc<UiAssets>,
 }
 pub fn open(settings: &SourceSettings) -> Result<(AssetLoader, Vec<SourceReport>)> {
+    open_with_refresh(settings, false)
+}
+pub fn initial_load(settings: &SourceSettings) -> Result<(AssetLoader, Vec<SourceReport>)> {
+    open_with_refresh(settings, true)
+}
+fn open_with_refresh(
+    settings: &SourceSettings,
+    refresh: bool,
+) -> Result<(AssetLoader, Vec<SourceReport>)> {
+    if !settings.remote_asset_url.trim().is_empty() {
+        return open_remote(settings, refresh);
+    }
     type PendingProvider = (String, String, Result<Arc<dyn AssetProvider>>);
     let mut providers: Vec<PendingProvider> = Vec::new();
     if !settings.path.trim().is_empty() {
@@ -182,6 +198,99 @@ pub fn open(settings: &SourceSettings) -> Result<(AssetLoader, Vec<SourceReport>
         report.issues.sort();
         report.issues.dedup();
         reports.push(report);
+    }
+    Ok((AssetLoader::new(Sources::new(sources)), reports))
+}
+fn open_remote(
+    settings: &SourceSettings,
+    refresh: bool,
+) -> Result<(AssetLoader, Vec<SourceReport>)> {
+    let Some((remote, root)) =
+        crate::remote::RemoteCache::open(&settings.remote_asset_url, &settings.path, refresh)?
+    else {
+        return Ok((AssetLoader::new(Sources::new(vec![])), vec![]));
+    };
+    let provider = Arc::new(CuratedProvider::with_cache(
+        curated::CollectionPaths::from_assets(&root)?,
+        Some(remote.clone()),
+    )?);
+    let catalog = provider.catalog()?;
+    let ui = provider.ui()?;
+    let mut issues = Vec::new();
+    let characters = if remote
+        .local
+        .as_ref()
+        .is_some_and(|p| p.join("character/presets").is_dir())
+    {
+        match provider.characters(&Default::default()) {
+            Ok(c) => c,
+            Err(e) => {
+                issues.push(format!("Characters: {e:#}"));
+                Arc::new(normalized::merge_characters(&[])?)
+            }
+        }
+    } else {
+        Arc::new(normalized::merge_characters(&[])?)
+    };
+    let downloads = remote.downloads.load(std::sync::atomic::Ordering::Relaxed);
+    let report = SourceReport {
+        name: format!("Remote assets · {downloads} downloaded"),
+        songs: catalog.songs.len(),
+        skins: ui.skins.len(),
+        characters: characters.presets.len(),
+        issues,
+    };
+    let source = Source {
+        key: String::new(),
+        catalog,
+        ui,
+        characters,
+        provider,
+    };
+    let mut sources = vec![source];
+    let mut reports = vec![report];
+    for folder in remote.local_libraries() {
+        if folder == root {
+            continue;
+        }
+        let main = remote.local.as_deref() == Some(folder);
+        let key = if main {
+            "local-assets".into()
+        } else {
+            folder.file_name().unwrap().to_string_lossy().into_owned()
+        };
+        let provider = Arc::new(CuratedProvider::from_assets(folder)?);
+        let ui = if folder.join("ui").is_dir() {
+            provider.ui()?
+        } else {
+            Arc::new(normalized::empty_ui())
+        };
+        let characters = if !main && folder.join("character/presets").is_dir() {
+            provider.characters(&Default::default())?
+        } else {
+            Arc::new(normalized::merge_characters(&[])?)
+        };
+        if ui.skins.is_empty()
+            && ui.boards.is_empty()
+            && ui.effects.is_empty()
+            && ui.scores.is_empty()
+            && characters.presets.is_empty()
+        {
+            continue;
+        }
+        reports.push(SourceReport {
+            name: key.clone(),
+            skins: ui.skins.len(),
+            characters: characters.presets.len(),
+            ..Default::default()
+        });
+        sources.push(Source {
+            key,
+            catalog: empty_catalog(),
+            ui,
+            characters,
+            provider,
+        });
     }
     Ok((AssetLoader::new(Sources::new(sources)), reports))
 }
@@ -479,6 +588,7 @@ mod tests {
         let root = tempfile::tempdir()?;
         let settings = SourceSettings {
             path: root.path().display().to_string(),
+            ..Default::default()
         };
         let (loader, reports) = open(&settings)?;
         assert!(reports.is_empty());

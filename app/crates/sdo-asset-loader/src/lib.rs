@@ -4,6 +4,7 @@ pub mod curated;
 mod normalized;
 mod pipeline;
 mod preview;
+mod remote;
 pub mod request;
 pub mod sources;
 #[cfg(test)]

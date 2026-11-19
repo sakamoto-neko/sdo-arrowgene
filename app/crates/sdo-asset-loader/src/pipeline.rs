@@ -214,7 +214,7 @@ fn prepare<C>(
     };
     let idle = reaction("idle", request.idle.as_ref());
     let miss = reaction("miss", request.miss.as_ref());
-    let (dance, mut dance_errors) = if request.character_bones == 0 {
+    let (dance, mut dance_errors) = if request.character_bones == 0 && !request.verify_audio {
         (None, Vec::new())
     } else {
         load_dance(

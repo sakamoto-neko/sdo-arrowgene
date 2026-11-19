@@ -1,5 +1,6 @@
 //! Curated UI and character assets, decoded once and shared by render components.
 mod character;
+pub mod distribution;
 mod wardrobe;
 pub use wardrobe::*;
 mod motion;

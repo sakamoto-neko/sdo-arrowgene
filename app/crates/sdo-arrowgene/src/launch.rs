@@ -32,7 +32,27 @@ pub(crate) fn run() -> Result<()> {
         ScoreStore::load(settings_path.with_file_name("multiplayer-scores.json"));
     let mut settings = SettingsStore::load(settings_path);
     settings.initialize_sources();
-    let (content, source_reports) = sources::open(settings.values.asset_paths.as_ref().unwrap())?;
+    let mut source_settings = settings.values.asset_paths.clone().unwrap_or_default();
+    if let Some(url) = &options.remote_asset_url {
+        source_settings.remote_asset_url.clone_from(url);
+    }
+    let (content, source_reports) = if options.initial_load {
+        ensure!(
+            !source_settings.remote_asset_url.trim().is_empty(),
+            "Initial load requires an asset server URL"
+        );
+        sources::initial_load(&source_settings)?
+    } else {
+        match sources::open(&source_settings) {
+            Err(error) if !source_settings.remote_asset_url.is_empty() => {
+                settings.issues.push(format!(
+                    "Remote assets: {error:#}. Open Settings and use Initial load."
+                ));
+                sources::open(&Default::default())?
+            }
+            result => result?,
+        }
+    };
     if options.verify_dances {
         return audit_dances(&content, &options);
     }
@@ -285,18 +305,19 @@ pub(crate) fn run() -> Result<()> {
     }
     let skin = &app.skin;
     let preset = sdo_gameplay::judgment::find(&options.preset).unwrap();
-    let (dance, dance_errors) = loader::load_dance(
-        content,
-        song_info.dance_moves_paths.as_deref(),
-        &chart,
-        options.difficulty,
-        app.characters
-            .preset(&app.selector.character)
-            .map_or(0, |c| c.skeleton.bones.len()),
-    );
+    let character = app.characters.preset(&app.selector.character).ok();
+    let (dance, dance_errors) = if let Some(character) = character {
+        loader::load_dance(
+            content,
+            song_info.dance_moves_paths.as_deref(),
+            &chart,
+            options.difficulty,
+            character.skeleton.bones.len(),
+        )
+    } else {
+        (None, Vec::new())
+    };
     let characters = &app.characters;
-    let selected_character = &app.selector.character;
-    let character = characters.preset(selected_character).ok();
     let idle = character
         .and_then(|c| c.idle.as_ref())
         .map(|definition| {

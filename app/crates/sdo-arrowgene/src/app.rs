@@ -113,6 +113,7 @@ impl App {
             options.difficulty.index(),
         )?;
         selector.source_settings = settings.values.asset_paths.clone().unwrap_or_default();
+        selector.remote_override = options.remote_asset_url.clone();
         selector.settings_open = catalog_is_empty_or_incomplete(&selector.catalog, &assets);
         selector.timing_offset_ms = options.offset * 1000.;
         selector.scroll_speed = options.speed.unwrap_or_default();

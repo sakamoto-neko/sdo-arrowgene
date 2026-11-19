@@ -44,6 +44,7 @@ pub struct LoadingView {
 pub struct SongSelector {
     pub lobby: LobbyView,
     pub source_settings: sdo_asset_loader::sources::SourceSettings,
+    pub remote_override: Option<String>,
     pub source_reports: Vec<sdo_asset_loader::sources::SourceReport>,
     pub settings_open: bool,
     pub sources_loading: bool,
@@ -94,6 +95,7 @@ impl SongSelector {
         let mut selector = Self {
             lobby: LobbyView::default(),
             source_settings: Default::default(),
+            remote_override: None,
             source_reports: Vec::new(),
             settings_open: false,
             timing_offset_ms: 0.,
